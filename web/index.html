@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ubuntu服务器相册</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        .gallery {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        .gallery-item {
+            background-color: #fff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+            transition: transform 0.2s ease-in-out;
+            cursor: pointer;
+        }
+        .gallery-item:hover {
+            transform: translateY(-5px);
+        }
+        .gallery-item img {
+            width: 100%;
+            height: 200px;
+            object-fit: cover;
+            display: block;
+        }
+        .image-info {
+            padding: 10px;
+            font-size: 0.9em;
+            color: #666;
+        }
+        .no-images, .loading, .error {
+            text-align: center;
+            padding: 20px;
+            font-style: italic;
+            grid-column: 1 / -1;
+        }
+        .loading {
+            color: #333;
+        }
+        .error {
+            color: #d32f2f;
+        }
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.9);
+        }
+        .modal-content {
+            margin: auto;
+            display: block;
+            width: 90%;
+            max-width: 90%;
+            max-height: 90%;
+            margin-top: 5%;
+        }
+        .modal-content img {
+            width: 100%;
+            height: auto;
+            display: block;
+            max-height: 80vh;
+            object-fit: contain;
+        }
+        .close {
+            position: absolute;
+            top: 15px;
+            right: 35px;
+            color: #f1f1f1;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover,
+        .close:focus {
+            color: #bbb;
+        }
+        .modal-info {
+            color: #fff;
+            text-align: center;
+            padding: 10px;
+            font-size: 1.2em;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Ubuntu服务器相册</h1>
+        <div class="gallery" id="gallery">
+            <div class="loading">正在加载图片...</div>
+        </div>
+    </div>
+
+    <!-- Modal for enlarged view -->
+    <div id="imageModal" class="modal">
+        <span class="close">&times;</span>
+        <div class="modal-content">
+            <img id="modalImage" src="" alt="Enlarged Image">
+            <div id="modalInfo" class="modal-info"></div>
+        </div>
+    </div>
+
+    <script>
+        // --- Application Logic ---
+        const galleryElement = document.getElementById('gallery');
+        const modal = document.getElementById('imageModal');
+        const modalImg = document.getElementById('modalImage');
+        const modalInfo = document.getElementById('modalInfo');
+        const span = document.getElementsByClassName('close')[0];
+
+        // API 端点 - 使用相对路径，假设前端和后端在同一服务器
+        const API_BASE_URL = ''; // 空字符串表示当前域
+        const IMAGES_API_URL = `${API_BASE_URL}/api/images`;
+        const IMAGE_SERVE_URL = `${API_BASE_URL}/images/`; // 用于构建图片URL
+
+        async function loadGallery() {
+            galleryElement.innerHTML = '<div class="loading">正在加载图片...</div>'; // 显示加载状态
+
+            try {
+                const response = await fetch(IMAGES_API_URL);
+                if (!response.ok) {
+                    if (response.status === 500) {
+                         const errorData = await response.json();
+                         throw new Error(errorData.error || `服务器内部错误 (${response.status})`);
+                    }
+                    throw new Error(`网络请求失败 (${response.status})`);
+                }
+                const imageData = await response.json();
+
+                galleryElement.innerHTML = ''; // Clear loading message
+
+                if (imageData.length === 0) {
+                    galleryElement.innerHTML = '<div class="no-images">该文件夹下没有找到图片。</div>';
+                    return;
+                }
+
+                // 按文件名排序 (已在后端完成，此处可省略或用于二次确认)
+                // imageData.sort((a, b) => a.filename.localeCompare(b.filename));
+
+                imageData.forEach(image => {
+                    // 构造图片URL (使用 encodeURIComponent 处理特殊字符)
+                    const imageUrl = `${IMAGE_SERVE_URL}${encodeURIComponent(image.filename)}`;
+
+                    const item = document.createElement('div');
+                    item.className = 'gallery-item';
+                    item.innerHTML = `
+                        <img src="${imageUrl}" alt="${image.filename}">
+                        <div class="image-info">${image.filename} (${image.size})</div>
+                    `;
+                    item.addEventListener('click', () => openModal(imageUrl, image));
+                    galleryElement.appendChild(item);
+                });
+            } catch (error) {
+                console.error("加载图片时出错:", error);
+                galleryElement.innerHTML = `<div class="error">加载图片失败: ${error.message}</div>`;
+            }
+        }
+
+        function openModal(imageUrl, imageInfo) {
+            modal.style.display = 'block';
+            modalImg.src = imageUrl;
+            modalInfo.textContent = `${imageInfo.filename} (${imageInfo.size}, ${imageInfo.date})`;
+        }
+
+        span.onclick = function() {
+            modal.style.display = 'none';
+        }
+
+        window.onclick = function(event) {
+            if (event.target == modal) {
+                modal.style.display = 'none';
+            }
+        }
+
+        // Initial load when page loads
+        window.onload = loadGallery;
+    </script>
+</body>
+</html>
+
+
+
