@@ -21,7 +21,7 @@
 1.  **克隆仓库**:
   
     ```bash
-    git clone https://github.com/你的用户名/ubuntu-photo-album.git
+    git clone https://github.com/ches2010/ubuntu-photo-album.git
     cd ubuntu-photo-album
     ```
 
