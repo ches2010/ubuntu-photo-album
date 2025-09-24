@@ -1,47 +1,67 @@
-# app.py
-from flask import Flask, jsonify, send_from_directory, abort, request, send_file
+from flask import Flask, jsonify, send_from_directory, abort, request
 import os
 import datetime
 import configparser
-import argparse
 import urllib.parse
-import shutil # For moving files
+import shutil
+from pathlib import Path
 
-# --- Configuration ---
+# --- 配置 ---
 CONFIG_FILE = 'config.ini'
-WEB_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
+# 确定项目根目录和web目录
+PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+WEB_ROOT = os.path.join(PROJECT_ROOT, 'web')
+
+# 确保web目录存在
+Path(WEB_ROOT).mkdir(parents=True, exist_ok=True)
 
 # 默认配置
 DEFAULT_CONFIG = {
     'settings': {
-        'port': '80',
+        'port': '5000',
         'debug': 'False',
-        'images_per_row': '5'
+        'images_per_row': '5',
+        'scan_subfolders': 'True',
+        'max_depth': '3',
+        'folder_1': '/path/to/your/images'
     }
 }
 
 def load_config():
-    """Load configuration from config.ini or create it with defaults."""
+    """加载配置文件，如不存在则创建默认配置"""
     config = configparser.ConfigParser()
     if not os.path.exists(CONFIG_FILE):
-        print(f"配置文件 {CONFIG_FILE} 不存在，将创建默认配置文件。")
+        print(f"配置文件 {CONFIG_FILE} 不存在，创建默认配置")
         config.read_dict(DEFAULT_CONFIG)
-        config.set('settings', 'folder_1', '/path/to/your/images')
         save_config(config)
     else:
         config.read(CONFIG_FILE)
+    
+    # 确保所有必要的配置项都存在
+    for section in DEFAULT_CONFIG:
+        if not config.has_section(section):
+            config.add_section(section)
+        for key, value in DEFAULT_CONFIG[section].items():
+            if not config.has_option(section, key):
+                config.set(section, key, value)
+    
     return config
 
 def save_config(config):
-    """Save the configuration object to config.ini."""
-    with open(CONFIG_FILE, 'w') as configfile:
-        config.write(configfile)
+    """保存配置到文件"""
+    try:
+        with open(CONFIG_FILE, 'w') as configfile:
+            config.write(configfile)
+        return True
+    except Exception as e:
+        print(f"保存配置失败: {e}")
+        return False
 
-# Load config at startup
+# 加载配置
 app_config = load_config()
 PORT = app_config.getint('settings', 'port', fallback=int(DEFAULT_CONFIG['settings']['port']))
-DEBUG = app_config.getboolean('settings', 'debug', fallback=DEFAULT_CONFIG['settings']['debug'])
-IMAGES_PER_ROW_DEFAULT = app_config.getint('settings', 'images_per_row', fallback=int(DEFAULT_CONFIG['settings']['images_per_row']))
+DEBUG = app_config.getboolean('settings', 'debug', fallback=False)
+IMAGES_PER_ROW_DEFAULT = app_config.getint('settings', 'images_per_row', fallback=5)
 
 app = Flask(__name__)
 
@@ -49,15 +69,17 @@ app = Flask(__name__)
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff'}
 
 def allowed_file(filename):
-    """检查文件扩展名是否为允许的图片格式"""
+    """检查文件是否为允许的图片格式"""
     return '.' in filename and \
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_file_info(filepath):
-    """获取文件信息：大小和修改日期"""
+    """获取文件大小和修改日期信息"""
     try:
         stat = os.stat(filepath)
         size_bytes = stat.st_size
+        
+        # 格式化文件大小
         if size_bytes < 1024:
             size = f"{size_bytes} B"
         elif size_bytes < 1024**2:
@@ -67,24 +89,12 @@ def get_file_info(filepath):
         else:
             size = f"{size_bytes/(1024**3):.1f} GB"
             
+        # 格式化修改日期
         mtime = datetime.datetime.fromtimestamp(stat.st_mtime)
         date_str = mtime.strftime('%Y-%m-%d')
         return size, date_str
     except OSError:
         return "Unknown", "Unknown"
-
-def get_configured_folders(config):
-    """从配置对象中提取所有配置的文件夹路径"""
-    folders = []
-    if config.has_section('settings'):
-        for key, value in config.items('settings'):
-            if key.startswith('folder_') and value.strip():
-                folder_path = value.strip()
-                if os.path.exists(folder_path):
-                    folders.append(folder_path)
-                else:
-                    print(f"警告: 配置的文件夹不存在: {folder_path}")
-    return folders
 
 def scan_folder_recursive(folder_path, current_depth=0, max_depth=0):
     """递归扫描文件夹及其子文件夹中的图片"""
@@ -113,23 +123,45 @@ def scan_folder_recursive(folder_path, current_depth=0, max_depth=0):
         
     return images
 
+def get_configured_folders(config):
+    """从配置中提取所有有效的图片文件夹"""
+    folders = []
+    if config.has_section('settings'):
+        for key, value in config.items('settings'):
+            if key.startswith('folder_') and value.strip():
+                folder_path = value.strip()
+                if os.path.exists(folder_path) and os.path.isdir(folder_path):
+                    folders.append(folder_path)
+                else:
+                    app.logger.warning(f"配置的文件夹不存在或不是目录: {folder_path}")
+    return folders
+
+# --- 路由 ---
+@app.route('/')
+def index():
+    """相册首页"""
+    return send_from_directory(WEB_ROOT, 'index.html')
+
+@app.route('/settings')
+def settings_page():
+    """设置页面"""
+    return send_from_directory(WEB_ROOT, 'settings.html')
 
 @app.route('/api/images')
 def list_images():
-    """API端点：返回分页的图片文件列表及其信息"""
+    """API端点：返回分页的图片列表"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
     
-    # 获取分页参数，默认第一页，每页40张
+    # 获取分页参数
     try:
         page = int(request.args.get('page', 1))
         per_page = int(request.args.get('per_page', 40))
         
-        # 限制每页数量只能是40或80
+        # 限制每页数量
         if per_page not in [40, 80]:
             per_page = 40
             
-        # 确保页码为正数
         if page < 1:
             page = 1
     except ValueError:
@@ -137,13 +169,11 @@ def list_images():
         per_page = 40
 
     images_per_row = current_config.getint('settings', 'images_per_row', fallback=IMAGES_PER_ROW_DEFAULT)
-
-    # 获取子文件夹扫描配置
     scan_subfolders = current_config.getboolean('settings', 'scan_subfolders', fallback=True)
     max_depth = current_config.getint('settings', 'max_depth', fallback=0)
 
     if not configured_folders:
-        app.logger.error("没有配置有效的图片文件夹。")
+        app.logger.error("没有配置有效的图片文件夹")
         return jsonify({
             "error": "服务器上未配置有效的图片文件夹。请检查设置。", 
             "images_per_row": images_per_row
@@ -155,10 +185,8 @@ def list_images():
     for folder_path in configured_folders:
         try:
             if scan_subfolders:
-                # 递归扫描所有子文件夹
                 filepaths = scan_folder_recursive(folder_path, max_depth=max_depth)
             else:
-                # 只扫描当前文件夹
                 filepaths = [
                     os.path.join(folder_path, f) 
                     for f in os.listdir(folder_path) 
@@ -174,7 +202,7 @@ def list_images():
                     size, date = get_file_info(filepath)
                     folder_index = configured_folders.index(folder_path)
                     
-                    # 生成包含相对路径的唯一ID
+                    # 生成唯一ID
                     encoded_path = urllib.parse.quote(relative_path, safe='')
                     unique_id = f"{encoded_path}_folder{folder_index}"
                     
@@ -191,10 +219,10 @@ def list_images():
         except Exception as e:
             app.logger.error(f"扫描文件夹 {folder_path} 时出错: {e}")
 
-    # 按文件夹和相对路径排序
+    # 排序
     all_images.sort(key=lambda x: (x['folder'], x['relative_path'].lower()))
     
-    # 计算分页
+    # 分页处理
     total_images = len(all_images)
     total_pages = max(1, (total_images + per_page - 1) // per_page)  # 向上取整
     start = (page - 1) * per_page
@@ -211,11 +239,10 @@ def list_images():
         "scan_subfolders": scan_subfolders
     }
     return jsonify(response_data)
-    
 
 @app.route('/images/<path:file_id>')
 def serve_image(file_id):
-    """API端点：根据唯一ID提供图片文件（支持子文件夹）"""
+    """API端点：提供图片文件"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
 
@@ -238,21 +265,18 @@ def serve_image(file_id):
         filepath = os.path.join(folder_path, decoded_path)
         
         if os.path.exists(filepath) and os.path.isfile(filepath) and allowed_file(filepath):
-            # 提供文件时需要返回完整路径的目录和文件名
             return send_from_directory(os.path.dirname(filepath), os.path.basename(filepath))
         else:
             abort(404)
     except (ValueError, IndexError):
         abort(404)
     except Exception as e:
-        app.logger.error(f"Error serving image {file_id}: {e}")
+        app.logger.error(f"提供图片 {file_id} 时出错: {e}")
         abort(500)
-
-# --- 新增：图片操作 API ---
 
 @app.route('/api/images/<path:file_id>', methods=['DELETE'])
 def delete_image(file_id):
-    """API端点：根据唯一ID删除图片文件"""
+    """API端点：删除图片"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
 
@@ -273,8 +297,6 @@ def delete_image(file_id):
         
         folder_path = configured_folders[folder_index]
         filepath = os.path.join(folder_path, decoded_path)
-        
-        # 获取文件名（修复：定义filename变量）
         filename = os.path.basename(filepath)
         
         if os.path.exists(filepath) and os.path.isfile(filepath):
@@ -291,14 +313,11 @@ def delete_image(file_id):
         return jsonify({"error": f"权限不足，无法删除文件 '{filename}'。"}), 403
     except Exception as e:
         app.logger.error(f"删除文件 {file_id} 时出错: {e}")
-        # 修复：确保错误消息中不使用可能未定义的变量
         return jsonify({"error": f"删除文件时发生内部错误: {str(e)}"}), 500
-
-
 
 @app.route('/api/images/<path:file_id>/move', methods=['POST'])
 def move_image(file_id):
-    """API端点：根据唯一ID移动图片文件到指定文件夹"""
+    """API端点：移动图片到其他文件夹"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
     
@@ -321,79 +340,51 @@ def move_image(file_id):
         
     target_folder_path = configured_folders[target_folder_index]
 
-    # --- 解析源文件ID ---
+    # 解析源文件ID
     try:
         parts = file_id.split('_folder')
         if len(parts) != 2:
             return jsonify({"error": "无效的源文件ID格式。"}), 400
-        encoded_name_part, index_ext_part = parts
-        index_ext_split = index_ext_part.split('.', 1)
-        if len(index_ext_split) != 2:
-            return jsonify({"error": "无效的源文件ID格式。"}), 400
-        source_folder_index_str, ext = index_ext_split
+        encoded_path_part, source_folder_index_str = parts
         source_folder_index = int(source_folder_index_str)
         
-        decoded_name = urllib.parse.unquote(encoded_name_part)
-        filename = f"{decoded_name}.{ext}"
+        decoded_path = urllib.parse.unquote(encoded_path_part)
+        source_filepath = os.path.join(configured_folders[source_folder_index], decoded_path)
+        filename = os.path.basename(source_filepath)
 
         if source_folder_index < 0 or source_folder_index >= len(configured_folders):
             return jsonify({"error": "源文件ID对应的文件夹不存在。"}), 404
         
-        source_folder_path = configured_folders[source_folder_index]
-        source_file_path = os.path.join(source_folder_path, filename)
-        
-        if not (os.path.exists(source_file_path) and os.path.isfile(source_file_path)):
+        if not os.path.exists(source_filepath) or not os.path.isfile(source_filepath):
             return jsonify({"error": "源文件不存在。"}), 404
-            
-        # --- 执行移动 ---
-        target_file_path = os.path.join(target_folder_path, filename)
-        
-        # 检查目标文件是否已存在
-        if os.path.exists(target_file_path):
-            return jsonify({"error": f"目标文件夹中已存在名为 '{filename}' 的文件。"}), 409 # Conflict
 
-        shutil.move(source_file_path, target_file_path)
+        # 目标文件路径
+        target_filepath = os.path.join(target_folder_path, filename)
         
-        # 生成新的文件ID
-        new_unique_id = f"{urllib.parse.quote(decoded_name, safe='')}_folder{target_folder_index}{ext}"
+        # 处理同名文件
+        counter = 1
+        while os.path.exists(target_filepath):
+            name, ext = os.path.splitext(filename)
+            target_filepath = os.path.join(target_folder_path, f"{name}_{counter}{ext}")
+            counter += 1
+
+        # 移动文件
+        shutil.move(source_filepath, target_filepath)
+        app.logger.info(f"已移动文件: {source_filepath} -> {target_filepath}")
         
-        app.logger.info(f"已移动文件: {source_file_path} -> {target_file_path}")
         return jsonify({
-            "message": f"文件 '{filename}' 已成功移动到 '{target_folder_path}'。",
-            "new_file_id": new_unique_id
+            "message": f"文件 '{filename}' 已成功移动到目标文件夹。",
+            "new_filename": os.path.basename(target_filepath)
         }), 200
             
     except (ValueError, IndexError):
-        return jsonify({"error": "无效的源文件ID格式。"}), 400
-    except PermissionError as e:
-        app.logger.error(f"权限错误，无法移动文件: {source_file_path} -> {target_file_path}. Error: {e}")
+        return jsonify({"error": "无效的文件ID格式。"}), 400
+    except PermissionError:
+        app.logger.error(f"权限错误，无法移动文件")
         return jsonify({"error": "权限不足，无法移动文件。"}), 403
     except Exception as e:
         app.logger.error(f"移动文件 {file_id} 时出错: {e}")
         return jsonify({"error": f"移动文件时发生内部错误: {str(e)}"}), 500
-
-
-# --- 提供前端页面 ---
-
-@app.route('/')
-def index():
-    """提供前端HTML页面"""
-    index_path = os.path.join(WEB_ROOT, 'index.html')
-    if os.path.exists(index_path):
-        return send_from_directory(WEB_ROOT, 'index.html')
-    else:
-        return "Frontend (index.html) not found. Please ensure it's in the 'web' folder.", 404
-
-@app.route('/settings')
-def settings_page():
-    """提供设置页面"""
-    settings_path = os.path.join(WEB_ROOT, 'settings.html')
-    if os.path.exists(settings_path):
-        return send_from_directory(WEB_ROOT, 'settings.html')
-    else:
-        return "Settings page (settings.html) not found.", 404
-
-# --- 设置相关的 API ---
 
 @app.route('/api/config', methods=['GET', 'POST'])
 def handle_config():
@@ -402,7 +393,6 @@ def handle_config():
         try:
             config_data = request.get_json()
             
-            # 验证配置数据格式
             if not isinstance(config_data, dict):
                 return jsonify({"error": "无效的数据格式，期望一个对象"}), 400
                 
@@ -411,7 +401,6 @@ def handle_config():
             # 更新基本设置
             for key in ['port', 'debug', 'images_per_row', 'scan_subfolders', 'max_depth']:
                 if key in config_data:
-                    # 转换为字符串存储
                     config.set('settings', key, str(config_data[key]))
             
             # 处理图片文件夹
@@ -427,9 +416,11 @@ def handle_config():
                         config.set('settings', f'folder_{i}', folder_path.strip())
             
             # 保存配置
-            save_config(config)
-            return jsonify({"message": "配置已成功保存"})
-            
+            if save_config(config):
+                return jsonify({"message": "配置已成功保存"})
+            else:
+                return jsonify({"error": "保存配置到文件失败"}), 500
+                
         except Exception as e:
             app.logger.error(f"保存配置时出错: {str(e)}")
             return jsonify({"error": f"保存配置失败: {str(e)}"}), 500
@@ -438,7 +429,6 @@ def handle_config():
     try:
         config = load_config()
         
-        # 构建配置字典，确保所有字段都存在
         config_dict = {
             'port': config.getint('settings', 'port', fallback=5000),
             'debug': config.getboolean('settings', 'debug', fallback=False),
@@ -466,45 +456,19 @@ def handle_config():
         app.logger.error(f"获取配置时出错: {str(e)}")
         return jsonify({"error": f"获取配置失败: {str(e)}"}), 500
 
-# --- 提供静态资源 ---
+# 静态文件路由 - 确保可以访问CSS、JS等静态资源
+@app.route('/css/<path:path>')
+def send_css(path):
+    return send_from_directory(os.path.join(WEB_ROOT, 'css'), path)
 
-@app.route('/viewer.js')
-def serve_viewer_js():
-    """提供图片查看器的 JavaScript 文件"""
-    js_path = os.path.join(WEB_ROOT, 'viewer.js')
-    if os.path.exists(js_path):
-        return send_from_directory(WEB_ROOT, 'viewer.js')
-    else:
-        abort(404)
+@app.route('/js/<path:path>')
+def send_js(path):
+    return send_from_directory(os.path.join(WEB_ROOT, 'js'), path)
 
-@app.route('/styles.css')
-def serve_styles_css():
-    """提供 CSS 文件"""
-    css_path = os.path.join(WEB_ROOT, 'styles.css')
-    if os.path.exists(css_path):
-        return send_from_directory(WEB_ROOT, 'styles.css')
-    else:
-        abort(404)
-
-
-def main():
-    parser = argparse.ArgumentParser(description='Run the Ubuntu Photo Album web app.')
-    parser.add_argument('--port', type=int, help='Port to run the server on')
-    parser.add_argument('--debug', action='store_true', help='Run in debug mode')
-    args = parser.parse_args()
-
-    use_port = args.port if args.port else PORT
-    use_debug = args.debug if args.debug else DEBUG
-
-    print(f"Web root is: {WEB_ROOT}")
-    print(f"Configuration file is: {CONFIG_FILE}")
-    print(f" * Running on port: {use_port}")
-    print(f" * Debug mode: {use_debug}")
-    print("Starting Flask development server...")
-    print(" * Running on all addresses (0.0.0.0)")
-    app.run(host='0.0.0.0', port=use_port, debug=use_debug)
+# 404错误处理
+@app.errorhandler(404)
+def page_not_found(e):
+    return send_from_directory(WEB_ROOT, '404.html'), 404
 
 if __name__ == '__main__':
-    main()
-
-
+    app.run(host='0.0.0.0', port=PORT, debug=DEBUG)
