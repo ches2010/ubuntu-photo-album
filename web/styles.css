@@ -1,175 +1,403 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ubuntu服务器相册</title>
-    <link rel="stylesheet" href="/styles.css">
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Ubuntu服务器相册</h1>
-            <a href="/settings" class="settings-link">⚙️ 设置</a>
-        </div>
-        
-        <!-- Gallery View -->
-        <div id="gallery-view">
-            <div class="gallery" id="gallery">
-                <div class="loading">正在加载图片...</div>
-            </div>
-        </div>
+/* styles.css */
+/* --- Base Styles --- */
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #222;
+    color: #eee;
+    overflow-x: hidden; /* Prevent horizontal scroll on gallery */
+}
+.container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 0;
+}
+.header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px 20px;
+    background-color: #333;
+    border-bottom: 1px solid #444;
+    flex-wrap: wrap;
+}
+h1 {
+    color: #fff;
+    margin: 0;
+    font-size: 1.5em;
+}
+.settings-link {
+    text-decoration: none;
+    color: #64b5f6;
+    font-weight: bold;
+    padding: 8px 16px;
+    border: 1px solid #64b5f6;
+    border-radius: 4px;
+    transition: background-color 0.2s, color 0.2s;
+    white-space: nowrap;
+}
+.settings-link:hover {
+    background-color: #64b5f6;
+    color: #222;
+}
 
-        <!-- Viewer View (Initially hidden) -->
-        <div id="viewer-view" class="viewer-container hidden">
-            <!-- Toolbar -->
-            <div class="viewer-toolbar">
-                <button id="viewer-back-btn" class="viewer-btn">← 返回</button>
-                <!-- Navigation Buttons -->
-                <button id="viewer-prev-btn" class="viewer-btn-nav" disabled>⬅️ 上一张</button>
-                <button id="viewer-next-btn" class="viewer-btn-nav" disabled>➡️ 下一张</button>
-                <!-- End Navigation Buttons -->
-                <button id="viewer-zoom-in" class="viewer-btn">🔍 +</button>
-                <button id="viewer-zoom-out" class="viewer-btn">🔍 -</button>
-                <button id="viewer-rotate-left" class="viewer-btn">↩️ 左转</button>
-                <button id="viewer-rotate-right" class="viewer-btn">↪️ 右转</button>
-                <button id="viewer-flip" class="viewer-btn">⇆ 翻转</button>
-                <button id="viewer-reset" class="viewer-btn">↺ 重置</button>
-                <button id="viewer-delete" class="viewer-btn viewer-btn-danger">🗑️ 删除</button>
-                <select id="viewer-move-select" class="viewer-select">
-                    <option value="">-- 移动到 --</option>
-                    <!-- Options will be populated by JS -->
-                </select>
-                <button id="viewer-move-btn" class="viewer-btn">📁 移动</button>
-            </div>
-            
-            <!-- Image Display Area -->
-            <div class="viewer-content">
-                <img id="viewer-image" src="" alt="查看图片">
-            </div>
-            
-            <!-- Image Info -->
-            <div class="viewer-info" id="viewer-info">
-                <!-- Info will be populated by JS -->
-            </div>
-        </div>
-    </div>
+/* --- Utility Classes --- */
+.hidden {
+    display: none !important;
+}
 
-    <script src="/viewer.js"></script>
-    <script>
-        // --- Main Application Logic (Gallery Loading) ---
-        const galleryElement = document.getElementById('gallery');
-        const galleryView = document.getElementById('gallery-view');
-        const viewerView = document.getElementById('viewer-view');
+/* --- Gallery View Styles --- */
+.gallery {
+    display: grid;
+    gap: 10px;
+    padding: 10px;
+    /* Default columns, overridden by JS */
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
 
-        const API_BASE_URL = '';
-        const IMAGES_API_URL = `${API_BASE_URL}/api/images`;
-        const IMAGE_SERVE_URL = `${API_BASE_URL}/images/`;
+/* Dynamic column classes for fixed-size items */
+/* We calculate width based on 100% / columns - gap */
+/* This is a rough approximation. JS calculates it more precisely. */
+/* For CSS-only, we can use aspect-ratio if supported, or a fixed height relative to width */
+/* Let's use padding-top trick for a fixed aspect ratio (e.g., 4:3 or 1:1) */
+/* 1:1 Square */
+.gallery.grid-cols-1 { grid-template-columns: repeat(1, 1fr); }
+.gallery.grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
+.gallery.grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
+.gallery.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+.gallery.grid-cols-5 { grid-template-columns: repeat(5, 1fr); }
+.gallery.grid-cols-6 { grid-template-columns: repeat(6, 1fr); }
+.gallery.grid-cols-7 { grid-template-columns: repeat(7, 1fr); }
+.gallery.grid-cols-8 { grid-template-columns: repeat(8, 1fr); }
+.gallery.grid-cols-9 { grid-template-columns: repeat(9, 1fr); }
+.gallery.grid-cols-10 { grid-template-columns: repeat(10, 1fr); }
+/* Add more if needed */
 
-        let currentImagesPerRow = 5;
-        let allImageData = []; // Store full image data for viewer
 
-        async function loadGallery() {
-            galleryElement.innerHTML = '<div class="loading">正在加载图片...</div>';
-            galleryElement.className = 'gallery';
+.gallery-item {
+    background-color: #333;
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+.gallery-item:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+/* Fixed size container for the image */
+.gallery-item-inner {
+    width: 100%;
+    /* Calculate height: 100vw / cols - padding - border - gap */
+    /* This is a rough approximation. JS calculates it more precisely. */
+    /* For CSS-only, we can use aspect-ratio if supported, or a fixed height relative to width */
+    /* Let's use padding-top trick for a fixed aspect ratio (e.g., 4:3 or 1:1) */
+    /* 1:1 Square */
+    padding-top: 100%; /* This makes height equal to width */
+    position: relative;
+    background-color: #444; /* Background for loading/transparent images */
+}
+.gallery-item-inner img {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Show full image, maintain aspect ratio */
+    transition: opacity 0.2s;
+}
+.image-info {
+    padding: 8px;
+    font-size: 0.8em;
+    color: #bbb;
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background-color: #3a3a3a;
+    border-top: 1px solid #444;
+}
 
-            try {
-                const response = await fetch(IMAGES_API_URL);
-                if (!response.ok) {
-                    if (response.status === 500) {
-                         const errorData = await response.json();
-                         throw new Error(errorData.error || `服务器内部错误 (${response.status})`);
-                    }
-                    throw new Error(`网络请求失败 (${response.status})`);
-                }
-                const data = await response.json();
-                allImageData = data.images || [];
-                currentImagesPerRow = data.images_per_row || 5;
-                console.log("Images per row from API:", currentImagesPerRow);
+.no-images, .loading, .error {
+    text-align: center;
+    padding: 60px 20px;
+    font-style: italic;
+    grid-column: 1 / -1;
+    background-color: #333;
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+    color: #ccc;
+}
+.loading {
+    color: #fff;
+}
+.error {
+    color: #ef5350;
+    background-color: #3e2723;
+    border: 1px solid #4e342e;
+}
 
-                galleryElement.className = `gallery grid-cols-${currentImagesPerRow}`;
+/* --- Image Viewer Styles --- */
+.viewer-container {
+    width: 100vw;
+    height: 100vh;
+    background-color: #111;
+    display: flex;
+    flex-direction: column;
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 1000;
+}
 
-                galleryElement.innerHTML = '';
+.viewer-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    padding: 10px 15px;
+    background-color: #333;
+    border-bottom: 1px solid #444;
+    gap: 10px;
+}
+.viewer-btn {
+    background-color: #444;
+    color: #eee;
+    border: 1px solid #555;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+.viewer-btn:hover {
+    background-color: #555;
+    border-color: #666;
+}
+/* --- Styles for New Navigation Buttons --- */
+.viewer-btn-nav {
+    /* Inherit base button styles */
+    background-color: #444;
+    color: #eee;
+    border: 1px solid #555;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s, border-color 0.2s;
+    /* Specific styles for navigation */
+    font-weight: bold;
+    min-width: 80px; /* Ensures consistent button width */
+    text-align: center;
+}
+.viewer-btn-nav:hover:not(:disabled) {
+    background-color: #555;
+    border-color: #666;
+}
+.viewer-btn-nav:disabled {
+    background-color: #333;
+    color: #777;
+    border-color: #444;
+    cursor: not-allowed;
+}
+/* --- End Styles for New Navigation Buttons --- */
+.viewer-btn-danger {
+    background-color: #c62828;
+    border-color: #d32f2f;
+}
+.viewer-btn-danger:hover {
+    background-color: #d32f2f;
+}
+.viewer-select {
+    padding: 6px 10px;
+    border-radius: 4px;
+    border: 1px solid #555;
+    background-color: #444;
+    color: #eee;
+}
 
-                if (allImageData.length === 0) {
-                    galleryElement.innerHTML = '<div class="no-images">配置的文件夹下没有找到图片。</div>';
-                    return;
-                }
+.viewer-content {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: auto;
+    padding: 20px;
+    background-color: #111; /* Match background */
+}
+.viewer-content img {
+    max-width: 100%;
+    max-height: 100%;
+    transform-origin: center center; /* Important for scaling/rotating from center */
+    transition: transform 0.2s ease; /* Smooth transform changes */
+    background-color: #222; /* Background for transparent images */
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.7); /* Subtle shadow */
+}
 
-                allImageData.forEach(image => {
-                    const imageUrl = `${IMAGE_SERVE_URL}${encodeURIComponent(image.id)}`;
-                    const item = document.createElement('div');
-                    item.className = 'gallery-item';
-                    item.dataset.imageId = image.id; // Store ID for viewer
-                    item.innerHTML = `
-                        <div class="gallery-item-inner">
-                            <img src="${imageUrl}" alt="${image.filename}">
-                        </div>
-                        <div class="image-info">${image.filename}</div>
-                    `;
-                    item.addEventListener('click', () => openImageViewer(image.id));
-                    galleryElement.appendChild(item);
-                });
-            } catch (error) {
-                console.error("加载图片时出错:", error);
-                galleryElement.innerHTML = `<div class="error">加载图片失败: ${error.message}</div>`;
-                galleryElement.className = 'gallery';
-            }
-        }
+.viewer-info {
+    padding: 15px 20px;
+    background-color: #333;
+    border-top: 1px solid #444;
+    font-size: 0.9em;
+    color: #ccc;
+    white-space: pre-line; /* Allow line breaks */
+}
 
-        // --- Modified openImageViewer to support navigation ---
-        function openImageViewer(imageId) {
-            // Pass the image ID and full data to the viewer script
-            // We now also pass a callback to update navigation button states
-            window.PhotoAlbumViewer.open(
-                imageId,
-                allImageData,
-                updateNavigationButtons // Pass the callback
-            );
-            // Switch views
-            galleryView.classList.add('hidden');
-            viewerView.classList.remove('hidden');
-        }
-        // --- End Modified openImageViewer ---
+/* --- Settings Page Styles --- */
+/* (Assuming settings.html and its styles are largely unchanged, just copied here for completeness) */
+.settings-form {
+    background-color: #333;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    max-width: 600px;
+    margin: 20px auto;
+    color: #eee;
+    border: 1px solid #444;
+}
+.settings-form h2 {
+    margin-top: 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #444;
+    color: #fff;
+}
+.settings-form label {
+    display: block;
+    margin: 15px 0 5px 0;
+    font-weight: bold;
+    color: #ddd;
+}
+.settings-form input[type="text"],
+.settings-form input[type="number"] {
+    width: 100%;
+    padding: 10px;
+    margin-bottom: 10px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    box-sizing: border-box;
+    background-color: #444;
+    color: #eee;
+}
+.settings-form button {
+    background-color: #1976d2;
+    color: white;
+    padding: 10px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 16px;
+    margin-top: 10px;
+    transition: background-color 0.2s;
+}
+.settings-form button:hover {
+    background-color: #1565c0;
+}
+#addFolder {
+    background-color: #4CAF50;
+    margin-top: 0;
+}
+#addFolder:hover {
+    background-color: #45a049;
+}
 
-        // --- Navigation Button Logic ---
-        const prevButton = document.getElementById('viewer-prev-btn');
-        const nextButton = document.getElementById('viewer-next-btn');
+.folder-input-group {
+    display: flex;
+    align-items: flex-end;
+    margin-bottom: 10px;
+}
+.folder-input-group label {
+    margin-right: 10px;
+    margin-bottom: 0;
+    flex-shrink: 0;
+    color: #ddd;
+}
+.folder-input-group input[type="text"] {
+    flex-grow: 1;
+    margin-bottom: 0;
+    margin-right: 10px;
+}
+.remove-folder {
+    background-color: #f44336;
+    color: white;
+    border: none;
+    padding: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background-color 0.2s;
+}
+.remove-folder:hover {
+    background-color: #d32f2f;
+}
 
-        // Function to update the state of navigation buttons
-        // This will be called by the viewer.js script
-        function updateNavigationButtons(currentIndex, totalImages) {
-            if (totalImages <= 1) {
-                prevButton.disabled = true;
-                nextButton.disabled = true;
-                return;
-            }
+.message {
+    margin-top: 20px;
+    padding: 15px;
+    border-radius: 4px;
+    text-align: center;
+}
+.message.success {
+    background-color: #388e3c;
+    color: #e8f5e9;
+    border: 1px solid #4caf50;
+}
+.message.error {
+    background-color: #c62828;
+    color: #ffebee;
+    border: 1px solid #f44336;
+}
 
-            prevButton.disabled = (currentIndex <= 0);
-            nextButton.disabled = (currentIndex >= totalImages - 1);
-        }
-
-        // Add event listeners for navigation buttons
-        prevButton.addEventListener('click', () => {
-            window.PhotoAlbumViewer.navigateToImage('prev');
-        });
-
-        nextButton.addEventListener('click', () => {
-            window.PhotoAlbumViewer.navigateToImage('next');
-        });
-        // --- End Navigation Button Logic ---
-
-        // Listen for back button event from viewer
-        window.addEventListener('viewerClosed', () => {
-             galleryView.classList.remove('hidden');
-             viewerView.classList.add('hidden');
-             // Optionally, reload gallery if an image was deleted/moved
-             // loadGallery();
-        });
-
-        window.onload = loadGallery;
-    </script>
-</body>
-</html>
+/* --- Responsive adjustments --- */
+@media (max-width: 768px) {
+    .header {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 10px 15px;
+    }
+    .settings-link {
+        margin-top: 10px;
+    }
+    .gallery {
+        gap: 8px;
+        padding: 8px;
+    }
+    /* Adjust minmax for smaller screens if needed */
+    .gallery.grid-cols-5 { grid-template-columns: repeat(3, 1fr); } /* Example: Show 3 on mobile instead of 5 */
+    .viewer-toolbar {
+        padding: 8px 10px;
+        gap: 6px;
+    }
+    .viewer-btn, .viewer-select, .viewer-btn-nav {
+        padding: 6px 10px;
+        font-size: 0.85em;
+    }
+    .viewer-btn-nav {
+        min-width: 70px; /* Adjust min-width for smaller screens */
+    }
+    .viewer-info {
+        padding: 10px 15px;
+        font-size: 0.85em;
+    }
+    .settings-form {
+        padding: 15px;
+        margin: 15px;
+    }
+    .folder-input-group {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    .folder-input-group label {
+        margin-right: 0;
+        margin-bottom: 5px;
+    }
+    .folder-input-group input[type="text"] {
+        margin-right: 0;
+        margin-bottom: 5px;
+    }
+}
 
 
