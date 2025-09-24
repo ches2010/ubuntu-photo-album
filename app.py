@@ -371,45 +371,74 @@ def get_config_api():
 
 @app.route('/api/config', methods=['GET', 'POST'])
 def handle_config():
+    """处理配置的获取和保存"""
     if request.method == 'POST':
         try:
             config_data = request.get_json()
+            
+            # 验证配置数据格式
+            if not isinstance(config_data, dict):
+                return jsonify({"error": "无效的数据格式，期望一个对象"}), 400
+                
             config = load_config()
             
-            # 更新配置
-            for key, value in config_data.items():
-                if key in ['port', 'debug', 'images_per_row', 'scan_subfolders', 'max_depth']:
-                    config.set('settings', key, str(value))
+            # 更新基本设置
+            for key in ['port', 'debug', 'images_per_row', 'scan_subfolders', 'max_depth']:
+                if key in config_data:
+                    # 转换为字符串存储
+                    config.set('settings', key, str(config_data[key]))
             
-            # 处理文件夹配置
-            if 'image_folders' in config_data:
-                # 先清除现有文件夹配置
+            # 处理图片文件夹
+            if 'image_folders' in config_data and isinstance(config_data['image_folders'], list):
+                # 先移除所有现有文件夹配置
                 for key in list(config['settings'].keys()):
                     if key.startswith('folder_'):
                         config.remove_option('settings', key)
                 
                 # 添加新的文件夹配置
-                for i, folder in enumerate(config_data['image_folders'], 1):
-                    config.set('settings', f'folder_{i}', folder)
+                for i, folder_path in enumerate(config_data['image_folders'], 1):
+                    if folder_path and isinstance(folder_path, str):
+                        config.set('settings', f'folder_{i}', folder_path.strip())
             
+            # 保存配置
             save_config(config)
-            return jsonify({"message": "配置已保存"})
+            return jsonify({"message": "配置已成功保存"})
+            
         except Exception as e:
-            return jsonify({"error": str(e)}), 500
+            app.logger.error(f"保存配置时出错: {str(e)}")
+            return jsonify({"error": f"保存配置失败: {str(e)}"}), 500
     
-    # GET请求返回当前配置
-    config = load_config()
-    config_dict = {
-        'port': config.getint('settings', 'port'),
-        'debug': config.getboolean('settings', 'debug'),
-        'images_per_row': config.getint('settings', 'images_per_row'),
-        'scan_subfolders': config.getboolean('settings', 'scan_subfolders'),
-        'max_depth': config.getint('settings', 'max_depth'),
-        'image_folders': [config.get('settings', f'folder_{i}') 
-                         for i in range(1, 10) 
-                         if config.has_option('settings', f'folder_{i}')]
-    }
-    return jsonify(config_dict)
+    # GET 请求 - 返回当前配置
+    try:
+        config = load_config()
+        
+        # 构建配置字典，确保所有字段都存在
+        config_dict = {
+            'port': config.getint('settings', 'port', fallback=5000),
+            'debug': config.getboolean('settings', 'debug', fallback=False),
+            'images_per_row': config.getint('settings', 'images_per_row', fallback=5),
+            'scan_subfolders': config.getboolean('settings', 'scan_subfolders', fallback=True),
+            'max_depth': config.getint('settings', 'max_depth', fallback=3),
+            'image_folders': []
+        }
+        
+        # 收集图片文件夹配置
+        i = 1
+        while True:
+            folder_key = f'folder_{i}'
+            if config.has_option('settings', folder_key):
+                folder_path = config.get('settings', folder_key)
+                if folder_path:
+                    config_dict['image_folders'].append(folder_path)
+                i += 1
+            else:
+                break
+        
+        return jsonify(config_dict)
+        
+    except Exception as e:
+        app.logger.error(f"获取配置时出错: {str(e)}")
+        return jsonify({"error": f"获取配置失败: {str(e)}"}), 500
 
 # --- 提供静态资源 ---
 
