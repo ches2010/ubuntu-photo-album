@@ -1,7 +1,5 @@
 #!/bin/bash
 
-# deploy.sh - Ubuntu Photo Album 一键部署脚本
-
 set -e # 遇到错误时退出
 
 echo "===== Ubuntu Photo Album 一键部署脚本 ====="
@@ -25,7 +23,7 @@ echo "1/6: 更新包列表并安装系统依赖..."
 apt update
 apt install -y python3 python3-pip python3-venv nginx supervisor
 
-# 2. 创建专用用户 (可选，但推荐)
+# 2. 创建专用用户
 echo "2/6: 创建专用用户 '$USER_NAME'..."
 id -u $USER_NAME &>/dev/null || useradd -r -s /bin/false -m -d /var/lib/$USER_NAME $USER_NAME
 
@@ -33,9 +31,7 @@ id -u $USER_NAME &>/dev/null || useradd -r -s /bin/false -m -d /var/lib/$USER_NA
 echo "3/6: 设置项目文件..."
 INSTALL_DIR="/opt/$PROJECT_NAME"
 mkdir -p $INSTALL_DIR
-# 复制当前目录下的所有文件到安装目录 (确保包含新文件)
 cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR"/
-# 确保 config.ini 对 photoalbum 用户可读写
 chown $USER_NAME:$USER_NAME "$INSTALL_DIR/config.ini"
 chmod 644 "$INSTALL_DIR/config.ini"
 chown -R $USER_NAME:$USER_NAME $INSTALL_DIR
@@ -45,12 +41,11 @@ chmod +x "$INSTALL_DIR/deploy.sh"
 echo "4/6: 创建Python虚拟环境并安装依赖..."
 cd $INSTALL_DIR
 sudo -u $USER_NAME python3 -m venv venv
-# 使用虚拟环境中的 pip 安装依赖
 sudo -u $USER_NAME bash -c "source venv/bin/activate && pip install -r requirements.txt"
 
-# 5. 配置图片文件夹
-echo "5/6: 配置图片文件夹..."
-read -p "请输入存放图片的文件夹的绝对路径 (例如: /home/youruser/photos): " IMAGE_FOLDER_PATH
+# 5. 配置提示（不再直接修改配置文件，而是引导用户通过网页设置）
+echo "5/6: 配置说明..."
+read -p "请输入初始图片文件夹的绝对路径 (例如: /home/youruser/photos): " IMAGE_FOLDER_PATH
 
 if [[ ! -d "$IMAGE_FOLDER_PATH" ]]; then
     echo "警告: 指定的路径 '$IMAGE_FOLDER_PATH' 不存在。"
@@ -58,21 +53,21 @@ if [[ ! -d "$IMAGE_FOLDER_PATH" ]]; then
     if [[ $CREATE_DIR =~ ^[Yy]$ ]]; then
         mkdir -p "$IMAGE_FOLDER_PATH"
         echo "文件夹已创建: $IMAGE_FOLDER_PATH"
-    else
-        echo "请确保图片文件夹路径正确。部署继续，但应用可能无法找到图片。"
     fi
 fi
-# 确保 photoalbum 用户有读取权限
-setfacl -m u:$USER_NAME:rx "$IMAGE_FOLDER_PATH" 2>/dev/null || chmod 755 "$IMAGE_FOLDER_PATH"
-# 如果文件夹内有文件，也需要设置权限 (简单起见，给所有文件rx权限)
-find "$IMAGE_FOLDER_PATH" -type f -exec setfacl -m u:$USER_NAME:r {} \; 2>/dev/null || find "$IMAGE_FOLDER_PATH" -type f -exec chmod 644 {} \;
-echo "已尝试为用户 '$USER_NAME' 设置对 '$IMAGE_FOLDER_PATH' 的访问权限。"
+
+# 设置初始文件夹权限
+setfacl -R -m u:$USER_NAME:rx "$IMAGE_FOLDER_PATH" 2>/dev/null || chmod -R 755 "$IMAGE_FOLDER_PATH"
+echo "已为用户 '$USER_NAME' 设置对 '$IMAGE_FOLDER_PATH' 的访问权限。"
+
+# 仅设置初始文件夹，其他配置通过网页设置
+sed -i "s|^folder_1 = .*|folder_1 = $IMAGE_FOLDER_PATH|" "$INSTALL_DIR/config.ini"
 
 # 6. 配置 Supervisor 管理 Flask 应用
 echo "6/6: 配置 Supervisor 服务..."
 cat > /etc/supervisor/conf.d/$SERVICE_NAME.conf <<EOF
 [program:$SERVICE_NAME]
-command=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/app.py --image-folder $IMAGE_FOLDER_PATH
+command=$INSTALL_DIR/venv/bin/python $INSTALL_DIR/app.py
 directory=$INSTALL_DIR
 user=$USER_NAME
 autostart=true
@@ -87,16 +82,16 @@ supervisorctl reread
 supervisorctl update
 supervisorctl restart $SERVICE_NAME || supervisorctl start $SERVICE_NAME
 
-# 配置 Nginx (可选，但推荐用于生产)
+# 配置 Nginx
 echo "配置 Nginx..."
 NGINX_CONF="/etc/nginx/sites-available/$SERVICE_NAME"
 cat > $NGINX_CONF <<EOF
 server {
     listen 80;
-    server_name _; # 监听所有域名
+    server_name _;
 
     location / {
-        proxy_pass http://127.0.0.1:5000; # Flask 默认端口
+        proxy_pass http://127.0.0.1:5000;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -105,30 +100,21 @@ server {
 }
 EOF
 
-# 启用站点配置
 ln -sf $NGINX_CONF /etc/nginx/sites-enabled/
-# 禁用默认站点 (可选)
 rm -f /etc/nginx/sites-enabled/default
 
-# 测试 Nginx 配置并重启
 nginx -t && systemctl restart nginx
 
 echo "===== 部署完成 ====="
-echo "1. Flask 应用已通过 Supervisor 管理，服务名为: $SERVICE_NAME"
-echo "   查看日志: sudo tail -f /var/log/$SERVICE_NAME.log"
-echo "   管理服务: sudo supervisorctl {start|stop|restart} $SERVICE_NAME"
-echo ""
-echo "2. Nginx 已配置为反向代理到 Flask 应用。"
-echo "   Nginx 配置文件: $NGINX_CONF"
-echo ""
-echo "*** 请确保你的服务器防火墙允许 HTTP (端口 80) 流量 ***"
+echo "1. 应用已部署，服务名为: $SERVICE_NAME"
+echo "2. 访问相册后，可以通过右上角的设置按钮配置："
+echo "   - 子文件夹扫描选项"
+echo "   - 每行显示的图片数量"
+echo "   - 添加多个图片文件夹"
 echo ""
 IP_ADDRESS=$(hostname -I | awk '{print $1}')
 if [ -z "$IP_ADDRESS" ]; then
     IP_ADDRESS="<your_server_ip>"
 fi
-echo "现在你可以通过浏览器访问: http://$IP_ADDRESS"
+echo "请通过浏览器访问: http://$IP_ADDRESS"
 echo "========================"
-
-
-
