@@ -1,420 +1,175 @@
-/* styles.css */
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ubuntu服务器相册</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Ubuntu服务器相册</h1>
+            <a href="/settings" class="settings-link">⚙️ 设置</a>
+        </div>
+        
+        <!-- Gallery View -->
+        <div id="gallery-view">
+            <div class="gallery" id="gallery">
+                <div class="loading">正在加载图片...</div>
+            </div>
+        </div>
 
-/* --- 基础样式 --- */
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
-    background-color: #f5f5f5;
-    color: #333;
-}
+        <!-- Viewer View (Initially hidden) -->
+        <div id="viewer-view" class="viewer-container hidden">
+            <!-- Toolbar -->
+            <div class="viewer-toolbar">
+                <button id="viewer-back-btn" class="viewer-btn">← 返回</button>
+                <!-- Navigation Buttons -->
+                <button id="viewer-prev-btn" class="viewer-btn-nav" disabled>⬅️ 上一张</button>
+                <button id="viewer-next-btn" class="viewer-btn-nav" disabled>➡️ 下一张</button>
+                <!-- End Navigation Buttons -->
+                <button id="viewer-zoom-in" class="viewer-btn">🔍 +</button>
+                <button id="viewer-zoom-out" class="viewer-btn">🔍 -</button>
+                <button id="viewer-rotate-left" class="viewer-btn">↩️ 左转</button>
+                <button id="viewer-rotate-right" class="viewer-btn">↪️ 右转</button>
+                <button id="viewer-flip" class="viewer-btn">⇆ 翻转</button>
+                <button id="viewer-reset" class="viewer-btn">↺ 重置</button>
+                <button id="viewer-delete" class="viewer-btn viewer-btn-danger">🗑️ 删除</button>
+                <select id="viewer-move-select" class="viewer-select">
+                    <option value="">-- 移动到 --</option>
+                    <!-- Options will be populated by JS -->
+                </select>
+                <button id="viewer-move-btn" class="viewer-btn">📁 移动</button>
+            </div>
+            
+            <!-- Image Display Area -->
+            <div class="viewer-content">
+                <img id="viewer-image" src="" alt="查看图片">
+            </div>
+            
+            <!-- Image Info -->
+            <div class="viewer-info" id="viewer-info">
+                <!-- Info will be populated by JS -->
+            </div>
+        </div>
+    </div>
 
-/* --- 应用容器 --- */
-#app-container {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
+    <script src="/viewer.js"></script>
+    <script>
+        // --- Main Application Logic (Gallery Loading) ---
+        const galleryElement = document.getElementById('gallery');
+        const galleryView = document.getElementById('gallery-view');
+        const viewerView = document.getElementById('viewer-view');
 
-/* --- 页面通用样式 --- */
-.page {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-}
+        const API_BASE_URL = '';
+        const IMAGES_API_URL = `${API_BASE_URL}/api/images`;
+        const IMAGE_SERVE_URL = `${API_BASE_URL}/images/`;
 
-.hidden {
-    display: none !important;
-}
+        let currentImagesPerRow = 5;
+        let allImageData = []; // Store full image data for viewer
 
-/* --- 设置页面 --- */
-#settings-page {
-    padding: 20px;
-    max-width: 600px;
-    margin: 0 auto;
-    background-color: #fff;
-    box-shadow: 0 0 10px rgba(0,0,0,0.1);
-    border-radius: 5px;
-    margin-top: 20px;
-}
+        async function loadGallery() {
+            galleryElement.innerHTML = '<div class="loading">正在加载图片...</div>';
+            galleryElement.className = 'gallery';
 
-#settings-page h1 {
-    text-align: center;
-    margin-bottom: 20px;
-}
+            try {
+                const response = await fetch(IMAGES_API_URL);
+                if (!response.ok) {
+                    if (response.status === 500) {
+                         const errorData = await response.json();
+                         throw new Error(errorData.error || `服务器内部错误 (${response.status})`);
+                    }
+                    throw new Error(`网络请求失败 (${response.status})`);
+                }
+                const data = await response.json();
+                allImageData = data.images || [];
+                currentImagesPerRow = data.images_per_row || 5;
+                console.log("Images per row from API:", currentImagesPerRow);
 
-#settings-form label {
-    display: inline-block;
-    width: 150px;
-    margin-bottom: 10px;
-}
+                galleryElement.className = `gallery grid-cols-${currentImagesPerRow}`;
 
-#settings-form input[type="number"],
-#settings-form input[type="text"] {
-    width: calc(100% - 160px);
-    padding: 8px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    box-sizing: border-box;
-}
+                galleryElement.innerHTML = '';
 
-#settings-form button {
-    padding: 10px 15px;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-right: 10px;
-}
+                if (allImageData.length === 0) {
+                    galleryElement.innerHTML = '<div class="no-images">配置的文件夹下没有找到图片。</div>';
+                    return;
+                }
 
-#settings-form button:hover {
-    background-color: #0056b3;
-}
+                allImageData.forEach(image => {
+                    const imageUrl = `${IMAGE_SERVE_URL}${encodeURIComponent(image.id)}`;
+                    const item = document.createElement('div');
+                    item.className = 'gallery-item';
+                    item.dataset.imageId = image.id; // Store ID for viewer
+                    item.innerHTML = `
+                        <div class="gallery-item-inner">
+                            <img src="${imageUrl}" alt="${image.filename}">
+                        </div>
+                        <div class="image-info">${image.filename}</div>
+                    `;
+                    item.addEventListener('click', () => openImageViewer(image.id));
+                    galleryElement.appendChild(item);
+                });
+            } catch (error) {
+                console.error("加载图片时出错:", error);
+                galleryElement.innerHTML = `<div class="error">加载图片失败: ${error.message}</div>`;
+                galleryElement.className = 'gallery';
+            }
+        }
 
-#settings-form #cancel-settings-btn {
-    background-color: #6c757d;
-}
+        // --- Modified openImageViewer to support navigation ---
+        function openImageViewer(imageId) {
+            // Pass the image ID and full data to the viewer script
+            // We now also pass a callback to update navigation button states
+            window.PhotoAlbumViewer.open(
+                imageId,
+                allImageData,
+                updateNavigationButtons // Pass the callback
+            );
+            // Switch views
+            galleryView.classList.add('hidden');
+            viewerView.classList.remove('hidden');
+        }
+        // --- End Modified openImageViewer ---
 
-#settings-form #cancel-settings-btn:hover {
-    background-color: #545b62;
-}
+        // --- Navigation Button Logic ---
+        const prevButton = document.getElementById('viewer-prev-btn');
+        const nextButton = document.getElementById('viewer-next-btn');
 
-/* --- 画廊页面 --- */
-#gallery-page {
-    /* padding: 20px; */
-}
+        // Function to update the state of navigation buttons
+        // This will be called by the viewer.js script
+        function updateNavigationButtons(currentIndex, totalImages) {
+            if (totalImages <= 1) {
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+                return;
+            }
 
-#gallery-page header {
-    background-color: #343a40;
-    color: white;
-    padding: 15px 20px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
+            prevButton.disabled = (currentIndex <= 0);
+            nextButton.disabled = (currentIndex >= totalImages - 1);
+        }
 
-#gallery-page header h1 {
-    margin: 0;
-}
+        // Add event listeners for navigation buttons
+        prevButton.addEventListener('click', () => {
+            window.PhotoAlbumViewer.navigateToImage('prev');
+        });
 
-#gallery-page header nav button {
-    padding: 8px 15px;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    margin-left: 10px;
-}
+        nextButton.addEventListener('click', () => {
+            window.PhotoAlbumViewer.navigateToImage('next');
+        });
+        // --- End Navigation Button Logic ---
 
-#gallery-page header nav button:hover {
-    background-color: #0056b3;
-}
+        // Listen for back button event from viewer
+        window.addEventListener('viewerClosed', () => {
+             galleryView.classList.remove('hidden');
+             viewerView.classList.add('hidden');
+             // Optionally, reload gallery if an image was deleted/moved
+             // loadGallery();
+        });
 
-#gallery-container {
-    padding: 20px;
-    display: grid;
-    /* grid-template-columns 将由 JavaScript 根据 images_per_row 动态设置 */
-    gap: 20px;
-    justify-content: center; /* 居中显示网格 */
-}
-
-.gallery-item {
-    position: relative;
-    overflow: hidden;
-    border-radius: 8px;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-    background-color: #fff;
-    transition: transform 0.2s ease-in-out;
-    aspect-ratio: 1 / 1; /* 强制正方形 */
-    display: flex;
-    flex-direction: column; /* 垂直排列图片和信息 */
-}
-
-.gallery-item:hover {
-    transform: translateY(-5px);
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-}
-
-.gallery-item img {
-    width: 100%;
-    height: 100%; /* 占满容器高度 */
-    object-fit: cover; /* 覆盖整个容器，可能裁剪 */
-    display: block;
-    cursor: pointer;
-}
-
-.gallery-item-info {
-    padding: 8px;
-    font-size: 0.85em;
-    color: #555;
-    background-color: rgba(255, 255, 255, 0.9); /* 半透明背景 */
-    /* position: absolute; */
-    /* bottom: 0; */
-    /* left: 0; */
-    /* right: 0; */
-    word-wrap: break-word; /* 长文件名换行 */
-    flex-shrink: 0; /* 防止信息区域被压缩 */
-    border-top: 1px solid #eee; /* 与图片分隔 */
-}
-
-.gallery-item-info .filename {
-    font-weight: bold;
-    display: block;
-    margin-bottom: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis; /* 超出部分省略号 */
-}
-
-.gallery-item-info .subfolder {
-    font-size: 0.8em;
-    color: #777;
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-
-/* --- 图片查看器 --- */
-#image-viewer {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.95);
-    display: flex;
-    flex-direction: column;
-    z-index: 1000;
-    color: white;
-}
-
-.viewer-header {
-    padding: 15px 20px;
-    background-color: rgba(30, 30, 30, 0.8);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-shrink: 0; /* 防止头部被压缩 */
-}
-
-.viewer-btn {
-    padding: 8px 12px;
-    background-color: #444;
-    color: white;
-    border: 1px solid #666;
-    border-radius: 4px;
-    cursor: pointer;
-    margin: 0 5px;
-    transition: background-color 0.2s;
-}
-
-.viewer-btn:hover {
-    background-color: #555;
-}
-
-.viewer-btn:disabled {
-    background-color: #333;
-    color: #777;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.viewer-btn-danger {
-    background-color: #dc3545;
-    border-color: #dc3545;
-}
-
-.viewer-btn-danger:hover:not(:disabled) {
-    background-color: #c82333;
-    border-color: #bd2130;
-}
-
-.viewer-nav-buttons {
-    /* 如果需要，可以添加样式 */
-}
-
-.viewer-content {
-    flex: 1;
-    display: flex;
-    overflow: hidden; /* 防止内容溢出 */
-}
-
-#viewer-image {
-    flex: 1;
-    object-fit: contain; /* 保持宽高比，完整显示图片 */
-    max-width: 100%;
-    max-height: 100%;
-    margin: auto; /* 在可用空间内居中 */
-    display: block;
-    transition: transform 0.2s ease; /* 平滑缩放/旋转/翻转 */
-    /* transform-origin: center center; */ /* 可选：定义变换中心点 */
-}
-
-.viewer-controls {
-    width: 200px; /* 固定宽度 */
-    background-color: rgba(40, 40, 40, 0.8);
-    padding: 15px;
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    flex-shrink: 0; /* 防止控制栏被压缩 */
-    overflow-y: auto; /* 如果按钮太多，允许滚动 */
-}
-
-.viewer-controls .viewer-btn {
-    margin-bottom: 10px;
-    width: 100%;
-    box-sizing: border-box;
-}
-
-.viewer-action-group {
-    display: flex;
-    flex-direction: column;
-    margin-bottom: 10px;
-}
-
-#viewer-move-select {
-    padding: 8px;
-    margin-bottom: 8px;
-    background-color: #555;
-    color: white;
-    border: 1px solid #777;
-    border-radius: 4px;
-    width: 100%;
-    box-sizing: border-box;
-    /* 支持 optgroup 样式 */
-    /* WebKit browsers */
-    /* Firefox */
-}
-
-#viewer-move-select optgroup {
-    background-color: #444;
-    font-weight: bold;
-    color: #ddd;
-}
-
-#viewer-move-select option {
-    background-color: #555;
-    color: white;
-    padding: 4px 8px; /* 内边距 */
-}
-
-#viewer-move-select option:disabled {
-    color: #888;
-    background-color: #333;
-}
-
-#viewer-move-select:focus {
-    outline: 2px solid #007bff;
-    outline-offset: 1px;
-}
-
-
-#viewer-move-btn {
-    /* width: 100%; */
-    /* padding: 8px; */
-    /* 可以复用 .viewer-btn 的样式 */
-}
-
-#viewer-info {
-    width: 250px; /* 固定宽度 */
-    background-color: rgba(40, 40, 40, 0.8);
-    padding: 15px;
-    font-size: 0.9em;
-    line-height: 1.5;
-    flex-shrink: 0; /* 防止信息区被压缩 */
-    overflow-y: auto; /* 如果信息太多，允许滚动 */
-    /* 使用新的结构化样式 */
-}
-
-.viewer-info-item {
-    margin-bottom: 8px;
-    display: flex;
-    flex-direction: column;
-}
-
-.viewer-info-item strong {
-    color: #ccc;
-    font-size: 0.95em;
-    margin-bottom: 2px;
-}
-
-.viewer-info-value {
-    color: #eee;
-    word-wrap: break-word; /* 长路径换行 */
-    font-family: monospace, sans-serif; /* 文件路径使用等宽字体 */
-    font-size: 0.9em;
-}
-
-
-/* --- 响应式设计 --- */
-@media (max-width: 768px) {
-    #gallery-container {
-        gap: 10px;
-        padding: 10px;
-    }
-
-    .gallery-item-info {
-        padding: 5px;
-        font-size: 0.75em;
-    }
-
-    .viewer-header {
-        padding: 10px 15px;
-        flex-direction: column;
-        align-items: flex-start;
-    }
-
-    .viewer-nav-buttons {
-        margin-top: 10px;
-        align-self: center; /* 按钮组居中 */
-    }
-
-    .viewer-content {
-        flex-direction: column; /* 在小屏幕上垂直排列 */
-    }
-
-    #viewer-image {
-        /* 在垂直排列时，让图片占主导 */
-        max-height: 60vh; /* 限制图片最大高度 */
-    }
-
-    .viewer-controls, #viewer-info {
-        width: 100%; /* 在垂直排列时，控制区和信息区占满宽度 */
-        max-height: 30vh; /* 限制最大高度 */
-        flex-direction: row; /* 按钮水平排列 */
-        flex-wrap: wrap; /* 按钮换行 */
-        justify-content: space-around; /* 按钮均匀分布 */
-        padding: 10px;
-    }
-
-    .viewer-controls .viewer-btn,
-    .viewer-action-group,
-    #viewer-info .viewer-info-item {
-        margin: 5px; /* 按钮间距 */
-        flex: 1 1 auto; /* 按钮弹性 */
-        min-width: 120px; /* 按钮最小宽度 */
-    }
-
-    .viewer-action-group {
-        flex-direction: row; /* 移动选择和按钮水平 */
-        align-items: center;
-    }
-
-    #viewer-move-select {
-        margin-right: 5px;
-        flex-grow: 1;
-        min-width: 150px;
-    }
-
-    #viewer-info {
-        flex-direction: column; /* 信息项垂直排列 */
-    }
-}
-
+        window.onload = loadGallery;
+    </script>
+</body>
+</html>
 
 
