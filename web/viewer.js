@@ -1,4 +1,4 @@
-// viewer.js
+// viewer.js (相关修改部分)
 (function(window) {
     'use strict';
 
@@ -31,6 +31,8 @@
     let scale = 1;
     let rotation = 0; // Degrees
     let isFlipped = false;
+    // --- New: Callback for updating navigation buttons ---
+    let updateNavigationButtonsCallback = null;
 
     // --- Helper Functions ---
     function getCurrentImageIndex() {
@@ -68,25 +70,6 @@
                 // Dispatch event to reload gallery
                 window.dispatchEvent(new CustomEvent('viewerAction', { detail: { action: 'delete', imageId } }));
                 
-                // Optional: Navigate to next/previous image if available
-                // This part depends on how the gallery handles updates after delete
-                // For now, we just close the viewer.
-                /*
-                if (allImagesData.length > 1) {
-                    let newIndex = currentIndex;
-                    if (currentIndex >= allImagesData.length - 1) {
-                        // If last item was deleted, go to previous
-                        newIndex = Math.max(0, currentIndex - 1);
-                    }
-                    // else stay at currentIndex, which now points to the next item
-                    const nextImageId = allImagesData[newIndex]?.id;
-                    if (nextImageId && nextImageId !== imageId) {
-                         // Re-open viewer with next image
-                         setTimeout(() => open(nextImageId, allImagesData), 100); 
-                    }
-                }
-                */
-                
             } else {
                 throw new Error(data.error || '删除失败');
             }
@@ -101,17 +84,30 @@
              alert("请选择一个目标文件夹。");
              return;
          }
-         if (parseInt(targetFolderIndex, 10) === currentImageData.folder_index) {
-             alert("目标文件夹与当前文件夹相同。");
+         // 注意：后端API目前只接受根文件夹索引。
+         // 如果需要移动到子文件夹，后端需要修改。
+         // 这里我们假设目标是配置的根文件夹。
+         const targetFolderData = getUniqueFolders()[targetFolderIndex];
+         if (!targetFolderData || targetFolderData.basePath !== currentImageData.folder) {
+             // Simple check if it's a different base folder for now
+             // More complex logic needed if moving within subfolders of same base
+         }
+         // 获取目标根文件夹的索引（在配置中的）
+         const allUniqueFolders = getUniqueFolders();
+         const actualTargetIndex = allUniqueFolders.findIndex(f => f.basePath === targetFolderData.basePath);
+
+         if (actualTargetIndex === -1 || actualTargetIndex === currentImageData.folder_index) {
+             alert("目标文件夹与当前文件所在根文件夹相同（或无效）。");
              return;
          }
         try {
+            // API 期望 target_folder_index 是配置文件夹的索引
             const response = await fetch(`${MOVE_API_URL}${encodeURIComponent(imageId)}/move`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ target_folder_index: targetFolderIndex })
+                body: JSON.stringify({ target_folder_index: actualTargetIndex }) // Send the base folder index
             });
             const data = await response.json();
             if (response.ok) {
@@ -123,7 +119,7 @@
                     viewerImage.src = `${IMAGE_SERVE_URL}${encodeURIComponent(currentImageId)}`;
                 }
                 // Dispatch event to reload gallery
-                window.dispatchEvent(new CustomEvent('viewerAction', { detail: { action: 'move', imageId, newImageId: data.new_file_id, targetFolderIndex } }));
+                window.dispatchEvent(new CustomEvent('viewerAction', { detail: { action: 'move', imageId, newImageId: data.new_file_id, targetFolderIndex: actualTargetIndex } }));
             } else {
                 if (response.status === 409) { // Conflict
                      alert(`移动失败: ${data.error}`);
@@ -156,24 +152,81 @@
         updateImageTransform();
     }
 
-    function populateMoveSelect(folders, currentFolderIndex) {
-        viewerMoveSelect.innerHTML = '<option value="">-- 移动到 --</option>';
-        folders.forEach((folderPath, index) => {
-            const option = document.createElement('option');
-            option.value = index;
-            option.textContent = `📁 文件夹 ${index + 1}: ${folderPath}`;
-            if (index === currentFolderIndex) {
-                option.disabled = true;
-                option.textContent += ' (当前)';
+    // --- Helper to get unique folders with subfolder info ---
+    function getUniqueFolders() {
+        const folderMap = new Map(); // Map base path to {basePath, subfolders: Set()}
+        allImagesData.forEach(img => {
+            const basePath = img.folder;
+            const subPath = img.subfolder || '';
+            if (!folderMap.has(basePath)) {
+                folderMap.set(basePath, { basePath, subfolders: new Set() });
             }
-            viewerMoveSelect.appendChild(option);
+            folderMap.get(basePath).subfolders.add(subPath);
+        });
+
+        // Convert to array of objects with sorted subfolders
+        const result = [];
+        folderMap.forEach((value, basePath) => {
+            const sortedSubfolders = Array.from(value.subfolders).sort();
+            result.push({ basePath, subfolders: sortedSubfolders });
+        });
+        return result;
+    }
+
+     // --- Modified populateMoveSelect to show subfolders ---
+    function populateMoveSelect() {
+        viewerMoveSelect.innerHTML = '<option value="">-- 移动到 --</option>';
+        const uniqueFolders = getUniqueFolders();
+        
+        // Find the index of the current base folder
+        const currentBaseFolderIndex = uniqueFolders.findIndex(f => f.basePath === currentImageData.folder);
+        
+        uniqueFolders.forEach((folderData, baseIndex) => {
+            const basePath = folderData.basePath;
+            const subfolders = folderData.subfolders;
+            
+            // Create an option group for the base folder
+            const optGroup = document.createElement('optgroup');
+            optGroup.label = `📁 根文件夹 ${baseIndex + 1}: ${basePath}`;
+            
+            // Add an option for the base folder itself (subfolder path is '')
+            const baseOption = document.createElement('option');
+            baseOption.value = baseIndex; // Use base index for API
+            baseOption.textContent = `📁 (根目录)`;
+            // Disable if it's the current base folder and file is in root of it
+            if (baseIndex === currentBaseFolderIndex && (!currentImageData.subfolder || currentImageData.subfolder === '')) {
+                 baseOption.disabled = true;
+                 baseOption.textContent += ' (当前)';
+            }
+            optGroup.appendChild(baseOption);
+
+            // Add options for each subfolder
+            subfolders.forEach(subPath => {
+                if (subPath !== '') { // Skip the root again
+                    const option = document.createElement('option');
+                    option.value = baseIndex; // Still use base index for API
+                    option.textContent = `📂 ${subPath}`;
+                    // Disable if it's the current subfolder
+                    if (baseIndex === currentBaseFolderIndex && currentImageData.subfolder === subPath) {
+                         option.disabled = true;
+                         option.textContent += ' (当前)';
+                    }
+                    optGroup.appendChild(option);
+                }
+            });
+            
+            viewerMoveSelect.appendChild(optGroup);
         });
     }
 
-    function open(imageId, allImageData) {
+
+    function open(imageId, allImageData, updateNavCallback = null) {
         // Store reference to all image data for navigation
         allImagesData = allImageData || [];
         
+        // Store the callback for updating navigation buttons
+        updateNavigationButtonsCallback = updateNavCallback;
+
         const imageData = allImagesData.find(img => img.id === imageId);
         if (!imageData) {
             console.error("找不到图片数据 ID:", imageId);
@@ -185,24 +238,25 @@
         currentImageData = imageData;
         // Ensure folder_index is available or derive it
         if (currentImageData.folder_index === undefined) {
-             currentImageData.folder_index = allImagesData.map(d => d.folder).indexOf(imageData.folder);
+             const uniqueFolders = getUniqueFolders().map(f => f.basePath);
+             currentImageData.folder_index = uniqueFolders.indexOf(imageData.folder);
         }
 
         // Set image source
         viewerImage.src = `${IMAGE_SERVE_URL}${encodeURIComponent(imageId)}`;
         
-        // Set image info
+        // Set image info - Include subfolder
+        const displaySubfolder = imageData.subfolder ? `📁 子文件夹: ${imageData.subfolder}<br>` : '';
         viewerInfo.innerHTML = `
             <strong>${imageData.filename}</strong><br>
             大小: ${imageData.size}<br>
             日期: ${imageData.date}<br>
-            文件夹: ${imageData.folder}
+            📁 根文件夹: ${imageData.folder}<br>
+            ${displaySubfolder}
         `;
 
-        // Populate move select
-        // Get unique folders from allImageData
-        const uniqueFolders = [...new Set(allImagesData.map(img => img.folder))];
-        populateMoveSelect(uniqueFolders, currentImageData.folder_index);
+        // Populate move select - Modified
+        populateMoveSelect(); // No longer pass folders/ index, gets from state
 
         // Reset state for new image
         resetViewerState();
@@ -221,6 +275,10 @@
         if (viewerNextBtn) {
             viewerNextBtn.disabled = currentIndex < 0 || currentIndex >= allImagesData.length - 1;
         }
+        // Call the external callback if provided
+        if (typeof updateNavigationButtonsCallback === 'function') {
+            updateNavigationButtonsCallback();
+        }
     }
 
     function closeImageViewer() { // Renamed from 'close' to avoid conflict
@@ -229,6 +287,7 @@
         currentImageId = null;
         currentImageData = null;
         allImagesData = [];
+        updateNavigationButtonsCallback = null; // Clear callback
         window.dispatchEvent(new CustomEvent('viewerClosed'));
     }
 
@@ -302,7 +361,7 @@
 
     viewerMoveBtn.addEventListener('click', () => {
         if (currentImageId) {
-            const targetIndex = viewerMoveSelect.value;
+            const targetIndex = viewerMoveSelect.value; // This is now the base folder index
             moveImage(currentImageId, targetIndex);
         }
     });
