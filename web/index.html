@@ -25,6 +25,10 @@
             <!-- Toolbar -->
             <div class="viewer-toolbar">
                 <button id="viewer-back-btn" class="viewer-btn">← 返回</button>
+                <!-- Navigation Buttons -->
+                <button id="viewer-prev-btn" class="viewer-btn-nav" disabled>⬅️ 上一张</button>
+                <button id="viewer-next-btn" class="viewer-btn-nav" disabled>➡️ 下一张</button>
+                <!-- End Navigation Buttons -->
                 <button id="viewer-zoom-in" class="viewer-btn">🔍 +</button>
                 <button id="viewer-zoom-out" class="viewer-btn">🔍 -</button>
                 <button id="viewer-rotate-left" class="viewer-btn">↩️ 左转</button>
@@ -113,13 +117,47 @@
             }
         }
 
+        // --- Modified openImageViewer to support navigation ---
         function openImageViewer(imageId) {
             // Pass the image ID and full data to the viewer script
-            window.PhotoAlbumViewer.open(imageId, allImageData);
+            // We now also pass a callback to update navigation button states
+            window.PhotoAlbumViewer.open(
+                imageId,
+                allImageData,
+                updateNavigationButtons // Pass the callback
+            );
             // Switch views
             galleryView.classList.add('hidden');
             viewerView.classList.remove('hidden');
         }
+        // --- End Modified openImageViewer ---
+
+        // --- Navigation Button Logic ---
+        const prevButton = document.getElementById('viewer-prev-btn');
+        const nextButton = document.getElementById('viewer-next-btn');
+
+        // Function to update the state of navigation buttons
+        // This will be called by the viewer.js script
+        function updateNavigationButtons(currentIndex, totalImages) {
+            if (totalImages <= 1) {
+                prevButton.disabled = true;
+                nextButton.disabled = true;
+                return;
+            }
+
+            prevButton.disabled = (currentIndex <= 0);
+            nextButton.disabled = (currentIndex >= totalImages - 1);
+        }
+
+        // Add event listeners for navigation buttons
+        prevButton.addEventListener('click', () => {
+            window.PhotoAlbumViewer.navigateToImage('prev');
+        });
+
+        nextButton.addEventListener('click', () => {
+            window.PhotoAlbumViewer.navigateToImage('next');
+        });
+        // --- End Navigation Button Logic ---
 
         // Listen for back button event from viewer
         window.addEventListener('viewerClosed', () => {
