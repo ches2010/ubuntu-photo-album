@@ -4,197 +4,280 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>相册设置</title>
-    <link rel="stylesheet" href="/styles.css">
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>相册设置</h1>
-            <a href="/" class="settings-link">🏠 返回相册</a>
-        </div>
-        <div class="settings-form">
-            <h2>通用设置</h2>
-            <label for="imagesPerRow">每行显示照片数:</label>
-            <input type="number" id="imagesPerRow" name="imagesPerRow" min="1" max="20" value="5">
-            
-            <h2>图片文件夹</h2>
-            <p style="font-size: 0.9em; color: #666; margin-top: -10px; margin-bottom: 10px;">
-                <em>注意：指定的文件夹及其所有子文件夹中的图片都将被包含。</em>
-            </p>
-            <div id="folderInputs">
-                <!-- Folder inputs will be dynamically added here -->
+<body class="bg-gray-100 min-h-screen">
+    <!-- 导航栏 -->
+    <nav class="bg-blue-600 text-white shadow-md">
+        <div class="container mx-auto px-4 py-3 flex justify-between items-center">
+            <div class="flex items-center space-x-2">
+                <i class="fa fa-picture-o text-2xl" aria-hidden="true"></i>
+                <h1 class="text-xl font-bold">服务器相册</h1>
             </div>
-            <button type="button" id="addFolder">+ 添加文件夹</button>
-            
-            <button id="saveSettings">保存设置</button>
-            <div id="message" class="message"></div>
+            <div class="flex space-x-6">
+                <a href="/" class="hover:text-blue-200 transition">
+                    <i class="fa fa-home mr-1"></i> 相册
+                </a>
+                <a href="/settings" class="hover:text-blue-200 transition border-b-2 border-white pb-1">
+                    <i class="fa fa-cog mr-1"></i> 设置
+                </a>
+            </div>
         </div>
-    </div>
+    </nav>
+
+    <!-- 主内容区 -->
+    <main class="container mx-auto px-4 py-8 max-w-4xl">
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800 border-b pb-2">
+                <i class="fa fa-sliders mr-2 text-blue-600"></i>系统设置
+            </h2>
+            
+            <form id="settings-form" class="space-y-6">
+                <!-- 服务器设置 -->
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="port" class="block text-sm font-medium text-gray-700 mb-1">
+                            服务器端口
+                        </label>
+                        <input type="number" id="port" name="port" min="1" max="65535"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <p class="text-xs text-gray-500 mt-1">修改端口需要重启应用才能生效</p>
+                    </div>
+                    
+                    <div>
+                        <label for="debug" class="block text-sm font-medium text-gray-700 mb-1">
+                            调试模式
+                        </label>
+                        <select id="debug" name="debug" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="false">关闭</option>
+                            <option value="true">开启</option>
+                        </select>
+                        <p class="text-xs text-gray-500 mt-1">仅开发环境使用，生产环境请关闭</p>
+                    </div>
+                </div>
+                
+                <!-- 相册显示设置 -->
+                <div>
+                    <label for="images_per_row" class="block text-sm font-medium text-gray-700 mb-1">
+                        每行显示图片数量
+                    </label>
+                    <input type="number" id="images_per_row" name="images_per_row" min="1" max="10"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                
+                <!-- 子文件夹设置 -->
+                <div class="grid md:grid-cols-2 gap-6">
+                    <div>
+                        <label for="scan_subfolders" class="block text-sm font-medium text-gray-700 mb-1">
+                            扫描子文件夹
+                        </label>
+                        <select id="scan_subfolders" name="scan_subfolders" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                            <option value="false">关闭</option>
+                            <option value="true">开启</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="max_depth" class="block text-sm font-medium text-gray-700 mb-1">
+                            最大扫描深度
+                        </label>
+                        <input type="number" id="max_depth" name="max_depth" min="0" max="10"
+                            class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <p class="text-xs text-gray-500 mt-1">0表示不限制深度</p>
+                    </div>
+                </div>
+                
+                <!-- 图片文件夹设置 -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        图片文件夹
+                    </label>
+                    
+                    <div id="folder-container" class="space-y-3">
+                        <!-- 文件夹输入框会动态添加到这里 -->
+                    </div>
+                    
+                    <button type="button" id="add-folder" 
+                        class="mt-3 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition flex items-center">
+                        <i class="fa fa-plus mr-2"></i> 添加文件夹
+                    </button>
+                    <p class="text-xs text-gray-500 mt-1">请输入图片所在文件夹的绝对路径</p>
+                </div>
+                
+                <!-- 提交按钮 -->
+                <div class="flex justify-end space-x-4 pt-4 border-t">
+                    <a href="/" class="px-4 py-2 border border-gray-300 rounded-md hover:bg-gray-100 transition">
+                        取消
+                    </a>
+                    <button type="submit" 
+                        class="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition">
+                        保存设置
+                    </button>
+                </div>
+            </form>
+        </div>
+        
+        <!-- 提示信息 -->
+        <div id="message" class="hidden p-4 rounded-md mb-6"></div>
+    </main>
+
+    <!-- 页脚 -->
+    <footer class="bg-gray-800 text-white py-6 mt-12">
+        <div class="container mx-auto px-4 text-center">
+            <p>服务器相册 &copy; 2023</p>
+        </div>
+    </footer>
 
     <script>
-        const folderInputsContainer = document.getElementById('folderInputs');
-        const addFolderButton = document.getElementById('addFolder');
-        const imagesPerRowInput = document.getElementById('imagesPerRow');
-        const saveButton = document.getElementById('saveSettings');
-        const messageDiv = document.getElementById('message');
-
-        // API 端点
-        const API_BASE_URL = '';
-        const CONFIG_API_URL = `${API_BASE_URL}/api/config`;
-
-        let folderCount = 0;
-
-        function createFolderInput(folderPath = '') {
-            folderCount++;
-            const folderDiv = document.createElement('div');
-            folderDiv.className = 'folder-input-group';
-            folderDiv.innerHTML = `
-                <label for="folder_${folderCount}">文件夹路径 ${folderCount}:</label>
-                <input type="text" id="folder_${folderCount}" name="folder_${folderCount}" value="${folderPath}" placeholder="/path/to/your/images">
-                <button type="button" class="remove-folder" data-folder-id="folder_${folderCount}">-</button>
-            `;
-            folderInputsContainer.appendChild(folderDiv);
-            
-            // Add event listener to the new remove button
-            folderDiv.querySelector('.remove-folder').addEventListener('click', function() {
-                const folderId = this.getAttribute('data-folder-id');
-                removeFolderInput(folderId);
-            });
-        }
-
-        function removeFolderInput(folderId) {
-            const inputGroup = document.querySelector(`.folder-input-group input[name='${folderId}']`).parentElement;
-            if (inputGroup) {
-                inputGroup.remove();
-                // Optionally, we could decrement folderCount, but it's not strictly necessary
-                // as we only use it for creating new unique IDs. Reusing IDs after deletion
-                // could be problematic if not handled carefully in the backend config parsing.
-            }
-        }
-
         // 页面加载时获取当前配置
-        async function loadSettings() {
-            try {
-                const response = await fetch(CONFIG_API_URL);
-                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-                const configData = await response.json();
-                
-                if (configData.settings) {
-                    // Load images per row
-                    if (configData.settings.images_per_row !== undefined) {
-                        imagesPerRowInput.value = configData.settings.images_per_row;
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('/api/config')
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('获取配置失败');
                     }
-
-                    // Load folders - find all keys starting with 'folder_'
-                    const folderKeys = Object.keys(configData.settings).filter(key => key.startsWith('folder_'));
-                    folderKeys.sort(); // Sort to maintain order if possible
+                    return response.json();
+                })
+                .then(config => {
+                    // 填充表单
+                    document.getElementById('port').value = config.port;
+                    document.getElementById('debug').value = config.debug.toString();
+                    document.getElementById('images_per_row').value = config.images_per_row;
+                    document.getElementById('scan_subfolders').value = config.scan_subfolders.toString();
+                    document.getElementById('max_depth').value = config.max_depth;
                     
-                    folderInputsContainer.innerHTML = ''; // Clear existing
-                    folderCount = 0; // Reset counter
-                    
-                    folderKeys.forEach(key => {
-                        const folderPath = configData.settings[key];
-                        if (folderPath) { // Only add if path is not empty
-                             createFolderInput(folderPath);
-                        }
+                    // 添加图片文件夹输入框
+                    const folderContainer = document.getElementById('folder-container');
+                    config.image_folders.forEach(folder => {
+                        addFolderInput(folder);
                     });
                     
-                    // Ensure at least one input field exists
-                    if (folderCount === 0) {
-                        createFolderInput();
+                    // 如果没有文件夹，添加一个空输入框
+                    if (config.image_folders.length === 0) {
+                        addFolderInput('');
                     }
+                })
+                .catch(error => {
+                    showMessage('获取配置失败: ' + error.message, 'error');
+                    console.error('Error loading config:', error);
+                });
+
+            // 添加文件夹按钮事件
+            document.getElementById('add-folder').addEventListener('click', function() {
+                addFolderInput('');
+            });
+
+            // 表单提交事件
+            document.getElementById('settings-form').addEventListener('submit', function(e) {
+                e.preventDefault();
+                saveSettings();
+            });
+        });
+
+        // 添加文件夹输入框
+        function addFolderInput(value = '') {
+            const folderContainer = document.getElementById('folder-container');
+            
+            const div = document.createElement('div');
+            div.className = 'flex items-center folder-input';
+            
+            div.innerHTML = `
+                <input type="text" name="image_folders[]" value="${escapeHtml(value)}"
+                    placeholder="/path/to/your/images"
+                    class="flex-grow px-3 py-2 border border-gray-300 rounded-l-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <button type="button" class="remove-folder px-3 py-2 bg-gray-200 text-gray-700 rounded-r-md hover:bg-gray-300 transition">
+                    <i class="fa fa-trash-o"></i>
+                </button>
+            `;
+            
+            folderContainer.appendChild(div);
+            
+            // 添加删除按钮事件
+            div.querySelector('.remove-folder').addEventListener('click', function() {
+                // 确保至少保留一个文件夹输入框
+                if (document.querySelectorAll('.folder-input').length > 1) {
+                    div.remove();
+                } else {
+                    div.querySelector('input').value = '';
                 }
-            } catch (error) {
-                console.error("加载设置失败:", error);
-                showMessage("加载设置失败: " + error.message, "error");
-                // Ensure at least one input field exists on error
-                if (folderCount === 0) {
-                    createFolderInput();
-                }
-            }
+            });
         }
 
         // 保存设置
-        async function saveSettings() {
-            const newImagesPerRow = parseInt(imagesPerRowInput.value, 10);
-            if (isNaN(newImagesPerRow) || newImagesPerRow < 1 || newImagesPerRow > 20) {
-                showMessage("每行照片数必须是 1 到 20 之间的整数。", "error");
-                return;
-            }
-
-            const folderInputs = document.querySelectorAll('#folderInputs input[type="text"]');
-            const folders = {};
-            let hasValidFolder = false;
-
-            folderInputs.forEach((input, index) => {
-                const value = input.value.trim();
-                const key = `folder_${index + 1}`; // Use sequential keys
-                folders[key] = value; // Store even if empty, backend handles it
-                if (value) {
-                    hasValidFolder = true;
-                }
-            });
-
-            if (!hasValidFolder) {
-                showMessage("请至少配置一个有效的图片文件夹路径。", "error");
-                return;
-            }
-
-            // Include images_per_row in the settings object
-            const payload = {
-                settings: {
-                    images_per_row: newImagesPerRow.toString(), // Ensure it's a string
-                    ...folders // Spread the folder entries
-                }
+        function saveSettings() {
+            // 收集表单数据
+            const formData = {
+                port: parseInt(document.getElementById('port').value),
+                debug: document.getElementById('debug').value === 'true',
+                images_per_row: parseInt(document.getElementById('images_per_row').value),
+                scan_subfolders: document.getElementById('scan_subfolders').value === 'true',
+                max_depth: parseInt(document.getElementById('max_depth').value),
+                image_folders: Array.from(
+                    document.querySelectorAll('input[name="image_folders[]"]')
+                ).map(input => input.value.trim()).filter(Boolean) // 过滤空值
             };
 
-            console.log("Saving payload:", payload); // For debugging
-
-            try {
-                const response = await fetch(CONFIG_API_URL, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(payload)
-                });
-
-                const data = await response.json();
-                if (response.ok) {
-                    showMessage(data.message || "设置已保存。", "success");
-                    // 可选：提示用户刷新相册页面以应用更改
-                    // setTimeout(() => { window.location.href = '/'; }, 1000);
-                } else {
-                    throw new Error(data.error || "保存失败");
+            // 发送更新请求
+            fetch('/api/config', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(formData)
+            })
+            .then(response => {
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.error || '保存配置失败');
+                    });
                 }
-            } catch (error) {
-                console.error("保存设置失败:", error);
-                showMessage("保存设置失败: " + error.message, "error");
-            }
+                return response.json();
+            })
+            .then(data => {
+                showMessage(data.message, 'success');
+                
+                // 2秒后跳转到相册首页
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 2000);
+            })
+            .catch(error => {
+                showMessage(error.message, 'error');
+                console.error('Error saving config:', error);
+            });
         }
 
+        // 显示消息提示
         function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
             messageDiv.textContent = text;
-            messageDiv.className = 'message ' + type;
-            // 可选：几秒后自动清除消息
-            // setTimeout(() => { messageDiv.textContent = ''; messageDiv.className = 'message'; }, 5000);
+            messageDiv.classList.remove('hidden', 'bg-green-100', 'text-green-800', 'bg-red-100', 'text-red-800');
+            
+            if (type === 'success') {
+                messageDiv.classList.add('bg-green-100', 'text-green-800');
+            } else {
+                messageDiv.classList.add('bg-red-100', 'text-red-800');
+            }
+            
+            // 5秒后自动隐藏
+            setTimeout(() => {
+                messageDiv.classList.add('hidden');
+            }, 5000);
         }
 
-        addFolderButton.addEventListener('click', () => createFolderInput());
-        saveButton.addEventListener('click', saveSettings);
-
-        // Attach event listeners to existing remove buttons after load
-        document.addEventListener('click', function(e) {
-             if (e.target && e.target.classList.contains('remove-folder')) {
-                 const folderId = e.target.getAttribute('data-folder-id');
-                 removeFolderInput(folderId);
-             }
-        });
-
-        window.onload = loadSettings;
+        // HTML转义函数，防止XSS
+        function escapeHtml(unsafe) {
+            if (!unsafe) return '';
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
     </script>
 </body>
 </html>
-
-
-
