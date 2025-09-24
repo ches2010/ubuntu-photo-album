@@ -6,6 +6,10 @@
     const viewerImage = document.getElementById('viewer-image');
     const viewerInfo = document.getElementById('viewer-info');
     const viewerBackBtn = document.getElementById('viewer-back-btn');
+    // --- New Navigation Buttons ---
+    const viewerPrevBtn = document.getElementById('viewer-prev-btn');
+    const viewerNextBtn = document.getElementById('viewer-next-btn');
+    // --- End New Navigation Buttons ---
     const viewerZoomInBtn = document.getElementById('viewer-zoom-in');
     const viewerZoomOutBtn = document.getElementById('viewer-zoom-out');
     const viewerRotateLeftBtn = document.getElementById('viewer-rotate-left');
@@ -23,9 +27,24 @@
     // --- Viewer State ---
     let currentImageId = null;
     let currentImageData = null; // Full data object for the current image
+    let allImagesData = []; // Store reference to all image data for navigation
     let scale = 1;
     let rotation = 0; // Degrees
     let isFlipped = false;
+
+    // --- Helper Functions ---
+    function getCurrentImageIndex() {
+        if (!currentImageId || !Array.isArray(allImagesData) || allImagesData.length === 0) {
+            return -1;
+        }
+        return allImagesData.findIndex(img => img.id === currentImageId);
+    }
+
+    function navigateToImage(imageId) {
+        if (imageId) {
+            open(imageId, allImagesData); // Re-open with the same data set
+        }
+    }
 
     // --- API Interaction ---
     async function deleteImage(imageId) {
@@ -39,9 +58,35 @@
             const data = await response.json();
             if (response.ok) {
                 alert(data.message);
-                closeImageViewer(); // Close viewer on successful delete
+                
+                // Find index before deletion
+                const currentIndex = getCurrentImageIndex();
+                
+                // Close viewer first
+                closeImageViewer(); 
+                
                 // Dispatch event to reload gallery
                 window.dispatchEvent(new CustomEvent('viewerAction', { detail: { action: 'delete', imageId } }));
+                
+                // Optional: Navigate to next/previous image if available
+                // This part depends on how the gallery handles updates after delete
+                // For now, we just close the viewer.
+                /*
+                if (allImagesData.length > 1) {
+                    let newIndex = currentIndex;
+                    if (currentIndex >= allImagesData.length - 1) {
+                        // If last item was deleted, go to previous
+                        newIndex = Math.max(0, currentIndex - 1);
+                    }
+                    // else stay at currentIndex, which now points to the next item
+                    const nextImageId = allImagesData[newIndex]?.id;
+                    if (nextImageId && nextImageId !== imageId) {
+                         // Re-open viewer with next image
+                         setTimeout(() => open(nextImageId, allImagesData), 100); 
+                    }
+                }
+                */
+                
             } else {
                 throw new Error(data.error || '删除失败');
             }
@@ -126,7 +171,10 @@
     }
 
     function open(imageId, allImageData) {
-        const imageData = allImageData.find(img => img.id === imageId);
+        // Store reference to all image data for navigation
+        allImagesData = allImageData || [];
+        
+        const imageData = allImagesData.find(img => img.id === imageId);
         if (!imageData) {
             console.error("找不到图片数据 ID:", imageId);
             alert("无法打开图片：数据丢失。");
@@ -135,7 +183,10 @@
 
         currentImageId = imageId;
         currentImageData = imageData;
-        currentImageData.folder_index = allImageData.map(d => d.folder).indexOf(imageData.folder); // Add folder index
+        // Ensure folder_index is available or derive it
+        if (currentImageData.folder_index === undefined) {
+             currentImageData.folder_index = allImagesData.map(d => d.folder).indexOf(imageData.folder);
+        }
 
         // Set image source
         viewerImage.src = `${IMAGE_SERVE_URL}${encodeURIComponent(imageId)}`;
@@ -150,29 +201,66 @@
 
         // Populate move select
         // Get unique folders from allImageData
-        const uniqueFolders = [...new Set(allImageData.map(img => img.folder))];
+        const uniqueFolders = [...new Set(allImagesData.map(img => img.folder))];
         populateMoveSelect(uniqueFolders, currentImageData.folder_index);
 
         // Reset state for new image
         resetViewerState();
+        
+        // Update navigation button states
+        updateNavigationButtons();
 
         console.log("Opened viewer for image:", imageId);
     }
+    
+    function updateNavigationButtons() {
+        const currentIndex = getCurrentImageIndex();
+        if (viewerPrevBtn) {
+            viewerPrevBtn.disabled = currentIndex <= 0;
+        }
+        if (viewerNextBtn) {
+            viewerNextBtn.disabled = currentIndex < 0 || currentIndex >= allImagesData.length - 1;
+        }
+    }
 
-    function close() {
+    function closeImageViewer() { // Renamed from 'close' to avoid conflict
         // Reset image source to prevent loading old image briefly
         viewerImage.src = '';
         currentImageId = null;
         currentImageData = null;
+        allImagesData = [];
         window.dispatchEvent(new CustomEvent('viewerClosed'));
     }
 
     // --- Event Listeners ---
-    viewerBackBtn.addEventListener('click', close);
+    viewerBackBtn.addEventListener('click', closeImageViewer);
+    
+    // --- New Navigation Event Listeners ---
+    if (viewerPrevBtn) {
+        viewerPrevBtn.addEventListener('click', () => {
+            const currentIndex = getCurrentImageIndex();
+            if (currentIndex > 0) {
+                const prevImageId = allImagesData[currentIndex - 1].id;
+                navigateToImage(prevImageId);
+            }
+        });
+    }
+    
+    if (viewerNextBtn) {
+        viewerNextBtn.addEventListener('click', () => {
+            const currentIndex = getCurrentImageIndex();
+            if (currentIndex >= 0 && currentIndex < allImagesData.length - 1) {
+                const nextImageId = allImagesData[currentIndex + 1].id;
+                navigateToImage(nextImageId);
+            }
+        });
+    }
+    // --- End New Navigation Event Listeners ---
 
     viewerZoomInBtn.addEventListener('click', () => {
         scale *= 1.2;
         updateImageTransform();
+        updateNavigationButtons(); // Optional: update if buttons depend on state
     });
 
     viewerZoomOutBtn.addEventListener('click', () => {
@@ -180,24 +268,31 @@
         // Optional: prevent scale from getting too small
         if (scale < 0.1) scale = 0.1;
         updateImageTransform();
+        updateNavigationButtons(); // Optional: update if buttons depend on state
     });
 
     viewerRotateLeftBtn.addEventListener('click', () => {
         rotation -= 90;
         updateImageTransform();
+        updateNavigationButtons(); // Optional: update if buttons depend on state
     });
 
     viewerRotateRightBtn.addEventListener('click', () => {
         rotation += 90;
         updateImageTransform();
+        updateNavigationButtons(); // Optional: update if buttons depend on state
     });
 
     viewerFlipBtn.addEventListener('click', () => {
         isFlipped = !isFlipped;
         updateImageTransform();
+        updateNavigationButtons(); // Optional: update if buttons depend on state
     });
 
-    viewerResetBtn.addEventListener('click', resetViewerState);
+    viewerResetBtn.addEventListener('click', () => {
+        resetViewerState();
+        updateNavigationButtons(); // Optional: update if buttons depend on state
+    });
 
     viewerDeleteBtn.addEventListener('click', () => {
         if (currentImageId) {
@@ -215,7 +310,7 @@
     // Expose API to global scope
     window.PhotoAlbumViewer = {
         open: open,
-        close: close
+        close: closeImageViewer // Expose the renamed close function
     };
 
 })(window);
