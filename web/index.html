@@ -39,8 +39,11 @@
         const IMAGES_API_URL = `${API_BASE_URL}/api/images`;
         const IMAGE_SERVE_URL = `${API_BASE_URL}/images/`;
 
+        let currentImagesPerRow = 5; // Default fallback
+
         async function loadGallery() {
             galleryElement.innerHTML = '<div class="loading">正在加载图片...</div>';
+            galleryElement.className = 'gallery'; // Reset class in case of error
 
             try {
                 const response = await fetch(IMAGES_API_URL);
@@ -51,17 +54,24 @@
                     }
                     throw new Error(`网络请求失败 (${response.status})`);
                 }
-                const imageData = await response.json();
+                const data = await response.json();
+                const imageData = data.images || [];
+                currentImagesPerRow = data.images_per_row || 5;
+                console.log("Images per row from API:", currentImagesPerRow);
+
+                // Update gallery class for CSS Grid
+                galleryElement.className = `gallery grid-cols-${currentImagesPerRow}`;
 
                 galleryElement.innerHTML = '';
 
                 if (imageData.length === 0) {
-                    galleryElement.innerHTML = '<div class="no-images">该文件夹下没有找到图片。</div>';
+                    galleryElement.innerHTML = '<div class="no-images">配置的文件夹下没有找到图片。</div>';
                     return;
                 }
 
                 imageData.forEach(image => {
-                    const imageUrl = `${IMAGE_SERVE_URL}${encodeURIComponent(image.filename)}`;
+                    // 使用新的唯一ID
+                    const imageUrl = `${IMAGE_SERVE_URL}${encodeURIComponent(image.id)}`;
 
                     const item = document.createElement('div');
                     item.className = 'gallery-item';
@@ -75,13 +85,15 @@
             } catch (error) {
                 console.error("加载图片时出错:", error);
                 galleryElement.innerHTML = `<div class="error">加载图片失败: ${error.message}</div>`;
+                // Ensure error message spans full width
+                galleryElement.className = 'gallery';
             }
         }
 
         function openModal(imageUrl, imageInfo) {
             modal.style.display = 'block';
             modalImg.src = imageUrl;
-            modalInfo.textContent = `${imageInfo.filename} (${imageInfo.size}, ${imageInfo.date})`;
+            modalInfo.textContent = `${imageInfo.filename} (${imageInfo.size}, ${imageInfo.date})\n文件夹: ${imageInfo.folder}`;
         }
 
         span.onclick = function() {
