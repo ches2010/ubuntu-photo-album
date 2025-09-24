@@ -242,21 +242,26 @@ def delete_image(file_id):
         folder_path = configured_folders[folder_index]
         filepath = os.path.join(folder_path, decoded_path)
         
+        # 获取文件名（修复：定义filename变量）
+        filename = os.path.basename(filepath)
+        
         if os.path.exists(filepath) and os.path.isfile(filepath):
             os.remove(filepath)
             app.logger.info(f"已删除文件: {filepath}")
             return jsonify({"message": f"文件 '{filename}' 已成功删除。"}), 200
         else:
-            return jsonify({"error": "文件不存在。"}), 404
+            return jsonify({"error": f"文件 '{filename}' 不存在。"}), 404
             
     except (ValueError, IndexError):
         return jsonify({"error": "无效的文件ID格式。"}), 400
     except PermissionError:
         app.logger.error(f"权限错误，无法删除文件: {filepath}")
-        return jsonify({"error": "权限不足，无法删除文件。"}), 403
+        return jsonify({"error": f"权限不足，无法删除文件 '{filename}'。"}), 403
     except Exception as e:
         app.logger.error(f"删除文件 {file_id} 时出错: {e}")
+        # 修复：确保错误消息中不使用可能未定义的变量
         return jsonify({"error": f"删除文件时发生内部错误: {str(e)}"}), 500
+
 
 
 @app.route('/api/images/<path:file_id>/move', methods=['POST'])
