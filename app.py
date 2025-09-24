@@ -86,9 +86,71 @@ def get_configured_folders(config):
                     print(f"警告: 配置的文件夹不存在: {folder_path}")
     return folders
 
+# --- 新增/修改的函数：递归扫描文件夹 ---
+def scan_folder_recursive(base_folder_path, relative_path="", folder_map=None, all_images=None, configured_folders=None, folder_index=None):
+    """
+    递归扫描文件夹及其子文件夹中的图片。
+    Args:
+        base_folder_path (str): 配置的根文件夹路径。
+        relative_path (str): 相对于根文件夹的当前路径。
+        folder_map (dict): 用于跟踪已处理文件的字典。
+        all_images (list): 存储所有找到的图片信息的列表。
+        configured_folders (list): 所有配置的根文件夹路径列表。
+        folder_index (int): 当前根文件夹在 configured_folders 中的索引。
+    """
+    if folder_map is None:
+        folder_map = {}
+    if all_images is None:
+        all_images = []
+    if configured_folders is None or folder_index is None:
+        # 这些参数在递归调用时应由上层传递
+        return all_images
+
+    current_path = os.path.join(base_folder_path, relative_path)
+    
+    try:
+        with os.scandir(current_path) as entries:
+            for entry in entries:
+                # 处理文件
+                if entry.is_file(follow_symlinks=False) and allowed_file(entry.name):
+                    # 使用 (filename, full_folder_path) 作为唯一键，防止不同子文件夹同名文件冲突
+                    # 或者使用 (filename, relative_subfolder_path) 作为键
+                    # 更稳健的方法是使用完整路径或相对路径+文件名
+                    # 这里我们使用 (entry.name, relative_path) 作为键，假设同一子文件夹内文件名唯一
+                    key = (entry.name, relative_path)
+                    if key not in folder_map:
+                        filepath = entry.path
+                        size, date = get_file_info(filepath)
+                        # 将相对路径编码到 ID 中，以便 serve_image 可以解析
+                        # ID 格式: {encoded_filename}_folder{folder_index}_{encoded_relative_subfolder_path}.{ext}
+                        name, ext = os.path.splitext(entry.name)
+                        encoded_relative_path = urllib.parse.quote(relative_path, safe='')
+                        unique_id = f"{urllib.parse.quote(name, safe='')}_folder{folder_index}_{encoded_relative_path}{ext}"
+                        
+                        all_images.append({
+                            'id': unique_id,
+                            'filename': entry.name,
+                            'folder': base_folder_path, # 根文件夹
+                            'subfolder': relative_path, # 子文件夹路径 (相对于根)
+                            'full_path': filepath, # 完整路径 (调试用)
+                            'size': size,
+                            'date': date
+                        })
+                        folder_map[key] = True
+                # 递归处理子目录
+                elif entry.is_dir(follow_symlinks=False):
+                    new_relative_path = os.path.join(relative_path, entry.name)
+                    scan_folder_recursive(base_folder_path, new_relative_path, folder_map, all_images, configured_folders, folder_index)
+    except PermissionError:
+        app.logger.warning(f"权限不足，无法访问文件夹: {current_path}")
+    except Exception as e:
+        app.logger.error(f"扫描文件夹 {current_path} 时出错: {e}")
+    return all_images
+
+
 @app.route('/api/images')
 def list_images():
-    """API端点：返回所有配置文件夹中的图片文件列表及其信息"""
+    """API端点：返回所有配置文件夹及其子文件夹中的图片文件列表及其信息"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
     images_per_row = current_config.getint('settings', 'images_per_row', fallback=IMAGES_PER_ROW_DEFAULT)
@@ -98,31 +160,15 @@ def list_images():
         return jsonify({"error": "服务器上未配置有效的图片文件夹。请检查设置。", "images_per_row": images_per_row}), 500
 
     all_images = []
-    folder_map = {}
-    for folder_path in configured_folders:
-        try:
-            for filename in os.listdir(folder_path):
-                filepath = os.path.join(folder_path, filename)
-                if os.path.isfile(filepath) and allowed_file(filename):
-                    key = (filename, folder_path)
-                    if key not in folder_map:
-                        size, date = get_file_info(filepath)
-                        folder_index = configured_folders.index(folder_path)
-                        name, ext = os.path.splitext(filename)
-                        unique_id = f"{urllib.parse.quote(name, safe='')}_folder{folder_index}{ext}"
-                        
-                        all_images.append({
-                            'id': unique_id,
-                            'filename': filename,
-                            'folder': folder_path,
-                            'size': size,
-                            'date': date
-                        })
-                        folder_map[key] = True
-        except Exception as e:
-            app.logger.error(f"扫描文件夹 {folder_path} 时出错: {e}")
+    # folder_map = {} # 不再需要全局的 folder_map
 
-    all_images.sort(key=lambda x: x['filename'].lower())
+    for idx, folder_path in enumerate(configured_folders):
+        # 对每个配置的文件夹，递归扫描其子文件夹
+        # folder_map 在每次扫描时是独立的
+        scan_folder_recursive(folder_path, "", {}, all_images, configured_folders, idx)
+
+    # 按文件名排序
+    all_images.sort(key=lambda x: (x['folder'], x['subfolder'], x['filename'].lower()))
     
     response_data = {
         "images": all_images,
@@ -140,30 +186,56 @@ def serve_image(file_id):
          abort(500)
 
     try:
+        # 解析新的 ID 格式: {encoded_filename}_folder{folder_index}_{encoded_relative_subfolder_path}.{ext}
         parts = file_id.split('_folder')
         if len(parts) != 2:
             abort(404)
-        encoded_name_part, index_ext_part = parts
-        index_ext_split = index_ext_part.split('.', 1)
-        if len(index_ext_split) != 2:
+        encoded_name_part, index_and_subfolder_part = parts
+        
+        # 分离文件夹索引和子文件夹路径
+        underscore_parts = index_and_subfolder_part.split('_', 1)
+        if len(underscore_parts) < 1: # 至少需要 folder_index
+             abort(404)
+        folder_index_str_with_ext_and_path = underscore_parts[0]
+        encoded_relative_subfolder_path = ""
+        if len(underscore_parts) > 1:
+            encoded_relative_subfolder_path = underscore_parts[1]
+
+        # 从 folder_index_str_with_ext_and_path 中分离出 index 和 ext
+        # 它的形式是 {index}.{ext} 或 {index}_{encoded_path}.{ext}
+        # 但我们已经分离了 encoded_path 部分，所以现在处理 {index}.{ext}
+        dot_parts = folder_index_str_with_ext_and_path.split('.', 1)
+        if len(dot_parts) != 2:
             abort(404)
-        folder_index_str, ext = index_ext_split
+        folder_index_str, ext = dot_parts
+        
         folder_index = int(folder_index_str)
         
         decoded_name = urllib.parse.unquote(encoded_name_part)
+        decoded_subfolder_path = urllib.parse.unquote(encoded_relative_subfolder_path)
         filename = f"{decoded_name}.{ext}"
 
         if folder_index < 0 or folder_index >= len(configured_folders):
             abort(404)
         
-        folder_path = configured_folders[folder_index]
-        filepath = os.path.join(folder_path, filename)
+        base_folder_path = configured_folders[folder_index]
+        # 构建完整文件路径
+        filepath = os.path.join(base_folder_path, decoded_subfolder_path, filename)
         
+        # 安全检查：确保文件路径在配置的文件夹内，防止路径遍历攻击
+        # os.path.commonpath 会规范化路径
+        if os.path.commonpath([base_folder_path, filepath]) != base_folder_path:
+            app.logger.warning(f"尝试访问路径遍历攻击的文件: {filepath} 不在 {base_folder_path} 内")
+            abort(403) # Forbidden
+
         if os.path.exists(filepath) and os.path.isfile(filepath):
-            return send_from_directory(folder_path, filename)
+            # 返回文件内容
+            return send_file(filepath) # send_file 更直接
         else:
+            app.logger.warning(f"请求的文件不存在: {filepath}")
             abort(404)
-    except (ValueError, IndexError):
+    except (ValueError, IndexError) as e:
+        app.logger.warning(f"解析文件ID时出错: {file_id}, 错误: {e}")
         abort(404)
     except Exception as e:
         app.logger.error(f"Error serving image {file_id}: {e}")
