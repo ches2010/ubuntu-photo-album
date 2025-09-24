@@ -1,9 +1,10 @@
 # app.py
-from flask import Flask, jsonify, send_from_directory, abort, request, redirect, url_for, render_template_string
+from flask import Flask, jsonify, send_from_directory, abort, request
 import os
 import datetime
 import configparser
 import argparse
+import urllib.parse # For URL encoding
 
 # --- Configuration ---
 CONFIG_FILE = 'config.ini'
@@ -12,9 +13,9 @@ WEB_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'web')
 # 默认配置
 DEFAULT_CONFIG = {
     'settings': {
-        'image_folder': '/path/to/your/images',
         'port': '80',
-        'debug': 'False'
+        'debug': 'False',
+        'images_per_row': '5' # Default value
     }
 }
 
@@ -24,6 +25,8 @@ def load_config():
     if not os.path.exists(CONFIG_FILE):
         print(f"配置文件 {CONFIG_FILE} 不存在，将创建默认配置文件。")
         config.read_dict(DEFAULT_CONFIG)
+        # Add a default folder entry
+        config.set('settings', 'folder_1', '/path/to/your/images')
         save_config(config)
     else:
         config.read(CONFIG_FILE)
@@ -36,15 +39,14 @@ def save_config(config):
 
 # Load config at startup
 app_config = load_config()
-IMAGE_FOLDER = app_config.get('settings', 'image_folder', fallback=DEFAULT_CONFIG['settings']['image_folder'])
 PORT = app_config.getint('settings', 'port', fallback=int(DEFAULT_CONFIG['settings']['port']))
 DEBUG = app_config.getboolean('settings', 'debug', fallback=DEFAULT_CONFIG['settings']['debug'])
+IMAGES_PER_ROW_DEFAULT = app_config.getint('settings', 'images_per_row', fallback=int(DEFAULT_CONFIG['settings']['images_per_row']))
 
 app = Flask(__name__)
-app.config['IMAGE_FOLDER'] = IMAGE_FOLDER
 
 # 支持的图片扩展名
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff', 'webp'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff'}
 
 def allowed_file(filename):
     """检查文件扩展名是否为允许的图片格式"""
@@ -72,52 +74,116 @@ def get_file_info(filepath):
     except OSError:
         return "Unknown", "Unknown"
 
+def get_configured_folders(config):
+    """从配置对象中提取所有配置的文件夹路径"""
+    folders = []
+    if config.has_section('settings'):
+        for key, value in config.items('settings'):
+            if key.startswith('folder_') and value.strip():
+                folder_path = value.strip()
+                if os.path.exists(folder_path):
+                    folders.append(folder_path)
+                else:
+                    print(f"警告: 配置的文件夹不存在: {folder_path}")
+    return folders
+
 @app.route('/api/images')
 def list_images():
-    """API端点：返回图片文件列表及其信息"""
-    # 每次请求都重新加载配置，以获取最新的 image_folder
+    """API端点：返回所有配置文件夹中的图片文件列表及其信息"""
+    # 每次请求都重新加载配置
     current_config = load_config()
-    image_folder = current_config.get('settings', 'image_folder', fallback=DEFAULT_CONFIG['settings']['image_folder'])
-    app.config['IMAGE_FOLDER'] = image_folder # 更新应用配置
+    configured_folders = get_configured_folders(current_config)
+    
+    # 获取每行照片数设置
+    images_per_row = current_config.getint('settings', 'images_per_row', fallback=IMAGES_PER_ROW_DEFAULT)
 
-    if not os.path.exists(image_folder):
-        app.logger.error(f"Image folder does not exist: {image_folder}")
-        return jsonify({"error": "Image folder does not exist on the server. Please check the settings."}), 500
+    if not configured_folders:
+        app.logger.error("没有配置有效的图片文件夹。")
+        return jsonify({"error": "服务器上未配置有效的图片文件夹。请检查设置。", "images_per_row": images_per_row}), 500
 
-    images = []
-    try:
-        for filename in os.listdir(image_folder):
-            filepath = os.path.join(image_folder, filename)
-            if os.path.isfile(filepath) and allowed_file(filename):
-                size, date = get_file_info(filepath)
-                images.append({
-                    'filename': filename,
-                    'size': size,
-                    'date': date
-                })
-        # 按文件名字母顺序排序
-        images.sort(key=lambda x: x['filename'].lower())
-        return jsonify(images)
-    except Exception as e:
-        app.logger.error(f"Error listing images: {e}")
-        return jsonify({"error": f"Failed to list images: {str(e)}"}), 500
+    all_images = []
+    folder_map = {} # 用于记录文件名到文件夹的映射，处理重名文件
+    for folder_path in configured_folders:
+        try:
+            for filename in os.listdir(folder_path):
+                filepath = os.path.join(folder_path, filename)
+                if os.path.isfile(filepath) and allowed_file(filename):
+                    # 使用 (filename, folder_path) 作为唯一键来处理重名文件
+                    key = (filename, folder_path)
+                    if key not in folder_map:
+                        size, date = get_file_info(filepath)
+                        # 为每个文件生成一个唯一的 ID，用于前端请求
+                        # 这里简单地使用 文件名_文件夹索引_文件扩展名
+                        folder_index = configured_folders.index(folder_path)
+                        name, ext = os.path.splitext(filename)
+                        unique_id = f"{urllib.parse.quote(name, safe='')}_folder{folder_index}{ext}"
+                        
+                        all_images.append({
+                            'id': unique_id,
+                            'filename': filename,
+                            'folder': folder_path,
+                            'size': size,
+                            'date': date
+                        })
+                        folder_map[key] = True
+        except Exception as e:
+            app.logger.error(f"扫描文件夹 {folder_path} 时出错: {e}")
+            # 可以选择跳过错误文件夹或返回错误，这里选择记录日志并继续
 
-@app.route('/images/<path:filename>')
-def serve_image(filename):
-    """API端点：提供图片文件"""
+    # 按文件名排序
+    all_images.sort(key=lambda x: x['filename'].lower())
+    
+    # 将 images_per_row 也返回给前端
+    response_data = {
+        "images": all_images,
+        "images_per_row": images_per_row
+    }
+    return jsonify(response_data)
+
+@app.route('/images/<path:file_id>')
+def serve_image(file_id):
+    """API端点：根据唯一ID提供图片文件"""
     # 重新加载配置以获取最新路径
     current_config = load_config()
-    image_folder = current_config.get('settings', 'image_folder', fallback=DEFAULT_CONFIG['settings']['image_folder'])
-    app.config['IMAGE_FOLDER'] = image_folder
+    configured_folders = get_configured_folders(current_config)
 
+    if not configured_folders:
+         abort(500) # 或返回特定错误
+
+    # 解析 file_id 来找到对应的文件夹和文件名
+    # 假设 file_id 格式为 {encoded_name}_folder{index}{ext}
     try:
-        # send_from_directory 会处理路径安全问题
-        return send_from_directory(image_folder, filename)
-    except FileNotFoundError:
-        app.logger.warning(f"Image not found: {filename}")
+        # 简单反向解析，实际项目中可能需要更健壮的方法
+        parts = file_id.split('_folder')
+        if len(parts) != 2:
+            abort(404)
+        encoded_name_part, index_ext_part = parts
+        # index_ext_part 应该是 "index.ext"
+        index_ext_split = index_ext_part.split('.', 1)
+        if len(index_ext_split) != 2:
+            abort(404)
+        folder_index_str, ext = index_ext_split
+        folder_index = int(folder_index_str)
+        
+        # 解码文件名 (这里假设前端用 quote 编码了文件名)
+        decoded_name = urllib.parse.unquote(encoded_name_part)
+        filename = f"{decoded_name}.{ext}"
+
+        if folder_index < 0 or folder_index >= len(configured_folders):
+            abort(404)
+        
+        folder_path = configured_folders[folder_index]
+        filepath = os.path.join(folder_path, filename)
+        
+        if os.path.exists(filepath) and os.path.isfile(filepath):
+             # send_from_directory 会处理路径安全问题
+            return send_from_directory(folder_path, filename)
+        else:
+            abort(404)
+    except (ValueError, IndexError):
         abort(404)
     except Exception as e:
-        app.logger.error(f"Error serving image {filename}: {e}")
+        app.logger.error(f"Error serving image {file_id}: {e}")
         abort(500)
 
 @app.route('/')
@@ -129,7 +195,7 @@ def index():
     else:
         return "Frontend (index.html) not found. Please ensure it's in the 'web' folder.", 404
 
-# --- 新增：设置相关的路由 ---
+# --- 设置相关的路由 ---
 
 @app.route('/settings')
 def settings_page():
@@ -141,7 +207,7 @@ def settings_page():
         return "Settings page (settings.html) not found.", 404
 
 @app.route('/api/config', methods=['GET'])
-def get_config():
+def get_config_api():
     """API端点：获取当前配置"""
     current_config = load_config()
     config_dict = {}
@@ -154,38 +220,36 @@ def get_config():
 @app.route('/api/config', methods=['POST'])
 def update_config():
     """API端点：更新配置"""
-    global app_config # 允许修改全局配置对象
+    global app_config
     data = request.get_json()
     if not data or 'settings' not in data:
         return jsonify({"error": "Invalid data format. Expected 'settings' object."}), 400
 
-    new_image_folder = data['settings'].get('image_folder')
-    if not new_image_folder:
-        return jsonify({"error": "Image folder path is required."}), 400
-
-    # 验证新路径（简单检查是否存在）
-    if not os.path.exists(new_image_folder):
-         # 不直接报错，允许用户设置一个尚不存在但可能后续创建的路径
-         print(f"Warning: New image folder path does not exist yet: {new_image_folder}")
-
+    new_settings = data['settings']
+    
     # 更新内存中的配置对象
     if not app_config.has_section('settings'):
         app_config.add_section('settings')
-    app_config.set('settings', 'image_folder', new_image_folder)
     
+    # 更新所有设置项
+    for key, value in new_settings.items():
+        # 确保 key 是字符串
+        key_str = str(key)
+        # 特殊处理 folder_x 键，确保值是字符串
+        if key_str.startswith('folder_'):
+             app_config.set('settings', key_str, str(value) if value else '')
+        else:
+             app_config.set('settings', key_str, str(value))
+
     # 保存到文件
     try:
         save_config(app_config)
-        # 更新 Flask app 的配置
-        app.config['IMAGE_FOLDER'] = new_image_folder
         return jsonify({"message": "Configuration updated successfully."}), 200
     except Exception as e:
         app.logger.error(f"Error saving config: {e}")
         return jsonify({"error": f"Failed to save configuration: {str(e)}"}), 500
 
-
 def main():
-    # 从命令行参数覆盖配置文件中的端口和调试模式（如果需要）
     parser = argparse.ArgumentParser(description='Run the Ubuntu Photo Album web app.')
     parser.add_argument('--port', type=int, help='Port to run the server on')
     parser.add_argument('--debug', action='store_true', help='Run in debug mode')
@@ -196,12 +260,10 @@ def main():
 
     print(f"Web root is: {WEB_ROOT}")
     print(f"Configuration file is: {CONFIG_FILE}")
-    print(f" * Image folder is: {app.config['IMAGE_FOLDER']}")
     print(f" * Running on port: {use_port}")
     print(f" * Debug mode: {use_debug}")
     print("Starting Flask development server...")
     print(" * Running on all addresses (0.0.0.0)")
-    # 注意：生产环境请勿使用 app.run()
     app.run(host='0.0.0.0', port=use_port, debug=use_debug)
 
 if __name__ == '__main__':
