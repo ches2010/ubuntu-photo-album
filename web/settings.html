@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>相册设置</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>相册设置</h1>
+            <a href="/" class="settings-link">🏠 返回相册</a>
+        </div>
+        <div class="settings-form">
+            <label for="imageFolder">图片文件夹路径:</label>
+            <input type="text" id="imageFolder" name="imageFolder" value="">
+            <button id="saveSettings">保存设置</button>
+            <div id="message" class="message"></div>
+        </div>
+    </div>
+
+    <script>
+        const imageFolderInput = document.getElementById('imageFolder');
+        const saveButton = document.getElementById('saveSettings');
+        const messageDiv = document.getElementById('message');
+
+        // API 端点
+        const API_BASE_URL = '';
+        const CONFIG_API_URL = `${API_BASE_URL}/api/config`;
+
+        // 页面加载时获取当前配置
+        async function loadSettings() {
+            try {
+                const response = await fetch(CONFIG_API_URL);
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                const configData = await response.json();
+                if (configData.settings && configData.settings.image_folder) {
+                    imageFolderInput.value = configData.settings.image_folder;
+                }
+            } catch (error) {
+                console.error("加载设置失败:", error);
+                showMessage("加载设置失败: " + error.message, "error");
+            }
+        }
+
+        // 保存设置
+        async function saveSettings() {
+            const newImagePath = imageFolderInput.value.trim();
+            if (!newImagePath) {
+                showMessage("请输入图片文件夹路径。", "error");
+                return;
+            }
+
+            const payload = {
+                settings: {
+                    image_folder: newImagePath
+                }
+            };
+
+            try {
+                const response = await fetch(CONFIG_API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+                if (response.ok) {
+                    showMessage(data.message || "设置已保存。", "success");
+                    // 可选：自动刷新相册页面或提示用户刷新
+                } else {
+                    throw new Error(data.error || "保存失败");
+                }
+            } catch (error) {
+                console.error("保存设置失败:", error);
+                showMessage("保存设置失败: " + error.message, "error");
+            }
+        }
+
+        function showMessage(text, type) {
+            messageDiv.textContent = text;
+            messageDiv.className = 'message ' + type;
+            // 可选：几秒后自动清除消息
+            // setTimeout(() => { messageDiv.textContent = ''; messageDiv.className = 'message'; }, 5000);
+        }
+
+        saveButton.addEventListener('click', saveSettings);
+
+        window.onload = loadSettings;
+    </script>
+</body>
+</html>
+
+
+
