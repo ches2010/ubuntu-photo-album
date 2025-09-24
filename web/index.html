@@ -217,10 +217,11 @@
                         <h5 id="modalFilename"></h5>
                         <p id="modalInfo"></p>
                         <div class="keyboard-shortcuts">
-                            <p>键盘快捷键: ← 上一张 | → 下一张 | + 放大 | - 缩小 | 0 重置 | R 旋转 | F 翻转 | Del 删除</p>
+                            <p>键盘快捷键: ← 上一张 | → 下一张 | + 放大 | - 缩小 | 0 重置 | R 旋转 | F 翻转 | <strong>Del 删除</strong></p>
                         </div>
                     </div>
                     <div>
+                        <div class="image-controls">
                         <div class="image-controls">
                             <button class="btn btn-secondary control-btn" id="zoomIn" title="放大 (快捷键 +)">
                                 <i class="fa fa-search-plus"></i>
@@ -565,8 +566,11 @@
                     flipImage();
                     break;
                 case 'Delete':
-                    e.preventDefault();
-                    deleteCurrentImage();
+                case 'Backspace':  // 同时支持退格键作为备选
+                    e.preventDefault();  // 防止默认行为（如浏览器后退）
+                    if (currentImageIndex !== -1) {
+                        deleteCurrentImage();
+                    }
                     break;
                 case 'Escape':
                     e.preventDefault();
