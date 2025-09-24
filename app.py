@@ -369,32 +369,47 @@ def get_config_api():
             config_dict[section][key] = value
     return jsonify(config_dict)
 
-@app.route('/api/config', methods=['POST'])
-def update_config():
-    """API端点：更新配置"""
-    global app_config
-    data = request.get_json()
-    if not data or 'settings' not in data:
-        return jsonify({"error": "Invalid data format. Expected 'settings' object."}), 400
-
-    new_settings = data['settings']
+@app.route('/api/config', methods=['GET', 'POST'])
+def handle_config():
+    if request.method == 'POST':
+        try:
+            config_data = request.get_json()
+            config = load_config()
+            
+            # 更新配置
+            for key, value in config_data.items():
+                if key in ['port', 'debug', 'images_per_row', 'scan_subfolders', 'max_depth']:
+                    config.set('settings', key, str(value))
+            
+            # 处理文件夹配置
+            if 'image_folders' in config_data:
+                # 先清除现有文件夹配置
+                for key in list(config['settings'].keys()):
+                    if key.startswith('folder_'):
+                        config.remove_option('settings', key)
+                
+                # 添加新的文件夹配置
+                for i, folder in enumerate(config_data['image_folders'], 1):
+                    config.set('settings', f'folder_{i}', folder)
+            
+            save_config(config)
+            return jsonify({"message": "配置已保存"})
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
     
-    if not app_config.has_section('settings'):
-        app_config.add_section('settings')
-    
-    for key, value in new_settings.items():
-        key_str = str(key)
-        if key_str.startswith('folder_'):
-             app_config.set('settings', key_str, str(value) if value else '')
-        else:
-             app_config.set('settings', key_str, str(value))
-
-    try:
-        save_config(app_config)
-        return jsonify({"message": "Configuration updated successfully."}), 200
-    except Exception as e:
-        app.logger.error(f"Error saving config: {e}")
-        return jsonify({"error": f"Failed to save configuration: {str(e)}"}), 500
+    # GET请求返回当前配置
+    config = load_config()
+    config_dict = {
+        'port': config.getint('settings', 'port'),
+        'debug': config.getboolean('settings', 'debug'),
+        'images_per_row': config.getint('settings', 'images_per_row'),
+        'scan_subfolders': config.getboolean('settings', 'scan_subfolders'),
+        'max_depth': config.getint('settings', 'max_depth'),
+        'image_folders': [config.get('settings', f'folder_{i}') 
+                         for i in range(1, 10) 
+                         if config.has_option('settings', f'folder_{i}')]
+    }
+    return jsonify(config_dict)
 
 # --- 提供静态资源 ---
 
