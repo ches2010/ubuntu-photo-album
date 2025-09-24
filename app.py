@@ -116,18 +116,38 @@ def scan_folder_recursive(folder_path, current_depth=0, max_depth=0):
 
 @app.route('/api/images')
 def list_images():
-    """API端点：返回所有配置文件夹及其子文件夹中的图片文件列表及其信息"""
+    """API端点：返回分页的图片文件列表及其信息"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
-    images_per_row = current_config.getint('settings', 'images_per_row', fallback=IMAGES_PER_ROW_DEFAULT)
     
+    # 获取分页参数，默认第一页，每页40张
+    try:
+        page = int(request.args.get('page', 1))
+        per_page = int(request.args.get('per_page', 40))
+        
+        # 限制每页数量只能是40或80
+        if per_page not in [40, 80]:
+            per_page = 40
+            
+        # 确保页码为正数
+        if page < 1:
+            page = 1
+    except ValueError:
+        page = 1
+        per_page = 40
+
+    images_per_row = current_config.getint('settings', 'images_per_row', fallback=IMAGES_PER_ROW_DEFAULT)
+
     # 获取子文件夹扫描配置
-    scan_subfolders = current_config.getboolean('settings', 'scan_subfolders', fallback=False)
+    scan_subfolders = current_config.getboolean('settings', 'scan_subfolders', fallback=True)
     max_depth = current_config.getint('settings', 'max_depth', fallback=0)
 
     if not configured_folders:
         app.logger.error("没有配置有效的图片文件夹。")
-        return jsonify({"error": "服务器上未配置有效的图片文件夹。请检查设置。", "images_per_row": images_per_row}), 500
+        return jsonify({
+            "error": "服务器上未配置有效的图片文件夹。请检查设置。", 
+            "images_per_row": images_per_row
+        }), 500
 
     all_images = []
     folder_map = {}
@@ -162,7 +182,7 @@ def list_images():
                         'id': unique_id,
                         'filename': filename,
                         'folder': folder_path,
-                        'relative_path': relative_path,  # 新增相对路径信息
+                        'relative_path': relative_path,
                         'size': size,
                         'date': date
                     })
@@ -174,12 +194,24 @@ def list_images():
     # 按文件夹和相对路径排序
     all_images.sort(key=lambda x: (x['folder'], x['relative_path'].lower()))
     
+    # 计算分页
+    total_images = len(all_images)
+    total_pages = max(1, (total_images + per_page - 1) // per_page)  # 向上取整
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_images = all_images[start:end]
+    
     response_data = {
-        "images": all_images,
+        "images": paginated_images,
+        "page": page,
+        "per_page": per_page,
+        "total_images": total_images,
+        "total_pages": total_pages,
         "images_per_row": images_per_row,
         "scan_subfolders": scan_subfolders
     }
     return jsonify(response_data)
+    
 
 @app.route('/images/<path:file_id>')
 def serve_image(file_id):
