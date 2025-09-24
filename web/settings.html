@@ -13,15 +13,25 @@
             <a href="/" class="settings-link">🏠 返回相册</a>
         </div>
         <div class="settings-form">
-            <label for="imageFolder">图片文件夹路径:</label>
-            <input type="text" id="imageFolder" name="imageFolder" value="">
+            <h2>通用设置</h2>
+            <label for="imagesPerRow">每行显示照片数:</label>
+            <input type="number" id="imagesPerRow" name="imagesPerRow" min="1" max="20" value="5">
+            
+            <h2>图片文件夹</h2>
+            <div id="folderInputs">
+                <!-- Folder inputs will be dynamically added here -->
+            </div>
+            <button type="button" id="addFolder">+ 添加文件夹</button>
+            
             <button id="saveSettings">保存设置</button>
             <div id="message" class="message"></div>
         </div>
     </div>
 
     <script>
-        const imageFolderInput = document.getElementById('imageFolder');
+        const folderInputsContainer = document.getElementById('folderInputs');
+        const addFolderButton = document.getElementById('addFolder');
+        const imagesPerRowInput = document.getElementById('imagesPerRow');
         const saveButton = document.getElementById('saveSettings');
         const messageDiv = document.getElementById('message');
 
@@ -29,34 +39,113 @@
         const API_BASE_URL = '';
         const CONFIG_API_URL = `${API_BASE_URL}/api/config`;
 
+        let folderCount = 0;
+
+        function createFolderInput(folderPath = '') {
+            folderCount++;
+            const folderDiv = document.createElement('div');
+            folderDiv.className = 'folder-input-group';
+            folderDiv.innerHTML = `
+                <label for="folder_${folderCount}">文件夹路径 ${folderCount}:</label>
+                <input type="text" id="folder_${folderCount}" name="folder_${folderCount}" value="${folderPath}" placeholder="/path/to/your/images">
+                <button type="button" class="remove-folder" data-folder-id="folder_${folderCount}">-</button>
+            `;
+            folderInputsContainer.appendChild(folderDiv);
+            
+            // Add event listener to the new remove button
+            folderDiv.querySelector('.remove-folder').addEventListener('click', function() {
+                const folderId = this.getAttribute('data-folder-id');
+                removeFolderInput(folderId);
+            });
+        }
+
+        function removeFolderInput(folderId) {
+            const inputGroup = document.querySelector(`.folder-input-group input[name='${folderId}']`).parentElement;
+            if (inputGroup) {
+                inputGroup.remove();
+                // Optionally, we could decrement folderCount, but it's not strictly necessary
+                // as we only use it for creating new unique IDs. Reusing IDs after deletion
+                // could be problematic if not handled carefully in the backend config parsing.
+            }
+        }
+
         // 页面加载时获取当前配置
         async function loadSettings() {
             try {
                 const response = await fetch(CONFIG_API_URL);
                 if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
                 const configData = await response.json();
-                if (configData.settings && configData.settings.image_folder) {
-                    imageFolderInput.value = configData.settings.image_folder;
+                
+                if (configData.settings) {
+                    // Load images per row
+                    if (configData.settings.images_per_row !== undefined) {
+                        imagesPerRowInput.value = configData.settings.images_per_row;
+                    }
+
+                    // Load folders - find all keys starting with 'folder_'
+                    const folderKeys = Object.keys(configData.settings).filter(key => key.startsWith('folder_'));
+                    folderKeys.sort(); // Sort to maintain order if possible
+                    
+                    folderInputsContainer.innerHTML = ''; // Clear existing
+                    folderCount = 0; // Reset counter
+                    
+                    folderKeys.forEach(key => {
+                        const folderPath = configData.settings[key];
+                        if (folderPath) { // Only add if path is not empty
+                             createFolderInput(folderPath);
+                        }
+                    });
+                    
+                    // Ensure at least one input field exists
+                    if (folderCount === 0) {
+                        createFolderInput();
+                    }
                 }
             } catch (error) {
                 console.error("加载设置失败:", error);
                 showMessage("加载设置失败: " + error.message, "error");
+                // Ensure at least one input field exists on error
+                if (folderCount === 0) {
+                    createFolderInput();
+                }
             }
         }
 
         // 保存设置
         async function saveSettings() {
-            const newImagePath = imageFolderInput.value.trim();
-            if (!newImagePath) {
-                showMessage("请输入图片文件夹路径。", "error");
+            const newImagesPerRow = parseInt(imagesPerRowInput.value, 10);
+            if (isNaN(newImagesPerRow) || newImagesPerRow < 1 || newImagesPerRow > 20) {
+                showMessage("每行照片数必须是 1 到 20 之间的整数。", "error");
                 return;
             }
 
+            const folderInputs = document.querySelectorAll('#folderInputs input[type="text"]');
+            const folders = {};
+            let hasValidFolder = false;
+
+            folderInputs.forEach((input, index) => {
+                const value = input.value.trim();
+                const key = `folder_${index + 1}`; // Use sequential keys
+                folders[key] = value; // Store even if empty, backend handles it
+                if (value) {
+                    hasValidFolder = true;
+                }
+            });
+
+            if (!hasValidFolder) {
+                showMessage("请至少配置一个有效的图片文件夹路径。", "error");
+                return;
+            }
+
+            // Include images_per_row in the settings object
             const payload = {
                 settings: {
-                    image_folder: newImagePath
+                    images_per_row: newImagesPerRow.toString(), // Ensure it's a string
+                    ...folders // Spread the folder entries
                 }
             };
+
+            console.log("Saving payload:", payload); // For debugging
 
             try {
                 const response = await fetch(CONFIG_API_URL, {
@@ -70,7 +159,8 @@
                 const data = await response.json();
                 if (response.ok) {
                     showMessage(data.message || "设置已保存。", "success");
-                    // 可选：自动刷新相册页面或提示用户刷新
+                    // 可选：提示用户刷新相册页面以应用更改
+                    // setTimeout(() => { window.location.href = '/'; }, 1000);
                 } else {
                     throw new Error(data.error || "保存失败");
                 }
@@ -87,7 +177,16 @@
             // setTimeout(() => { messageDiv.textContent = ''; messageDiv.className = 'message'; }, 5000);
         }
 
+        addFolderButton.addEventListener('click', () => createFolderInput());
         saveButton.addEventListener('click', saveSettings);
+
+        // Attach event listeners to existing remove buttons after load
+        document.addEventListener('click', function(e) {
+             if (e.target && e.target.classList.contains('remove-folder')) {
+                 const folderId = e.target.getAttribute('data-folder-id');
+                 removeFolderInput(folderId);
+             }
+        });
 
         window.onload = loadSettings;
     </script>
