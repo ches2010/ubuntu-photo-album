@@ -33,10 +33,13 @@ id -u $USER_NAME &>/dev/null || useradd -r -s /bin/false -m -d /var/lib/$USER_NA
 echo "3/6: 设置项目文件..."
 INSTALL_DIR="/opt/$PROJECT_NAME"
 mkdir -p $INSTALL_DIR
-# 复制当前目录下的所有文件到安装目录
+# 复制当前目录下的所有文件到安装目录 (确保包含新文件)
 cp -r "$SCRIPT_DIR"/* "$INSTALL_DIR"/
+# 确保 config.ini 对 photoalbum 用户可读写
+chown $USER_NAME:$USER_NAME "$INSTALL_DIR/config.ini"
+chmod 644 "$INSTALL_DIR/config.ini"
 chown -R $USER_NAME:$USER_NAME $INSTALL_DIR
-chmod +x "$INSTALL_DIR/deploy.sh" # 确保脚本可执行
+chmod +x "$INSTALL_DIR/deploy.sh"
 
 # 4. 创建并激活虚拟环境，安装Python依赖
 echo "4/6: 创建Python虚拟环境并安装依赖..."
