@@ -12,38 +12,62 @@
             <h1>Ubuntu服务器相册</h1>
             <a href="/settings" class="settings-link">⚙️ 设置</a>
         </div>
-        <div class="gallery" id="gallery">
-            <div class="loading">正在加载图片...</div>
+        
+        <!-- Gallery View -->
+        <div id="gallery-view">
+            <div class="gallery" id="gallery">
+                <div class="loading">正在加载图片...</div>
+            </div>
+        </div>
+
+        <!-- Viewer View (Initially hidden) -->
+        <div id="viewer-view" class="viewer-container hidden">
+            <!-- Toolbar -->
+            <div class="viewer-toolbar">
+                <button id="viewer-back-btn" class="viewer-btn">← 返回</button>
+                <button id="viewer-zoom-in" class="viewer-btn">🔍 +</button>
+                <button id="viewer-zoom-out" class="viewer-btn">🔍 -</button>
+                <button id="viewer-rotate-left" class="viewer-btn">↩️ 左转</button>
+                <button id="viewer-rotate-right" class="viewer-btn">↪️ 右转</button>
+                <button id="viewer-flip" class="viewer-btn">⇆ 翻转</button>
+                <button id="viewer-reset" class="viewer-btn">↺ 重置</button>
+                <button id="viewer-delete" class="viewer-btn viewer-btn-danger">🗑️ 删除</button>
+                <select id="viewer-move-select" class="viewer-select">
+                    <option value="">-- 移动到 --</option>
+                    <!-- Options will be populated by JS -->
+                </select>
+                <button id="viewer-move-btn" class="viewer-btn">📁 移动</button>
+            </div>
+            
+            <!-- Image Display Area -->
+            <div class="viewer-content">
+                <img id="viewer-image" src="" alt="查看图片">
+            </div>
+            
+            <!-- Image Info -->
+            <div class="viewer-info" id="viewer-info">
+                <!-- Info will be populated by JS -->
+            </div>
         </div>
     </div>
 
-    <!-- Modal for enlarged view -->
-    <div id="imageModal" class="modal">
-        <span class="close">&times;</span>
-        <div class="modal-content">
-            <img id="modalImage" src="" alt="Enlarged Image">
-            <div id="modalInfo" class="modal-info"></div>
-        </div>
-    </div>
-
+    <script src="/viewer.js"></script>
     <script>
-        // --- Application Logic ---
+        // --- Main Application Logic (Gallery Loading) ---
         const galleryElement = document.getElementById('gallery');
-        const modal = document.getElementById('imageModal');
-        const modalImg = document.getElementById('modalImage');
-        const modalInfo = document.getElementById('modalInfo');
-        const span = document.getElementsByClassName('close')[0];
+        const galleryView = document.getElementById('gallery-view');
+        const viewerView = document.getElementById('viewer-view');
 
-        // API 端点 - 使用相对路径
         const API_BASE_URL = '';
         const IMAGES_API_URL = `${API_BASE_URL}/api/images`;
         const IMAGE_SERVE_URL = `${API_BASE_URL}/images/`;
 
-        let currentImagesPerRow = 5; // Default fallback
+        let currentImagesPerRow = 5;
+        let allImageData = []; // Store full image data for viewer
 
         async function loadGallery() {
             galleryElement.innerHTML = '<div class="loading">正在加载图片...</div>';
-            galleryElement.className = 'gallery'; // Reset class in case of error
+            galleryElement.className = 'gallery';
 
             try {
                 const response = await fetch(IMAGES_API_URL);
@@ -55,56 +79,55 @@
                     throw new Error(`网络请求失败 (${response.status})`);
                 }
                 const data = await response.json();
-                const imageData = data.images || [];
+                allImageData = data.images || [];
                 currentImagesPerRow = data.images_per_row || 5;
                 console.log("Images per row from API:", currentImagesPerRow);
 
-                // Update gallery class for CSS Grid
                 galleryElement.className = `gallery grid-cols-${currentImagesPerRow}`;
 
                 galleryElement.innerHTML = '';
 
-                if (imageData.length === 0) {
+                if (allImageData.length === 0) {
                     galleryElement.innerHTML = '<div class="no-images">配置的文件夹下没有找到图片。</div>';
                     return;
                 }
 
-                imageData.forEach(image => {
-                    // 使用新的唯一ID
+                allImageData.forEach(image => {
                     const imageUrl = `${IMAGE_SERVE_URL}${encodeURIComponent(image.id)}`;
-
                     const item = document.createElement('div');
                     item.className = 'gallery-item';
+                    item.dataset.imageId = image.id; // Store ID for viewer
                     item.innerHTML = `
-                        <img src="${imageUrl}" alt="${image.filename}">
-                        <div class="image-info">${image.filename} (${image.size})</div>
+                        <div class="gallery-item-inner">
+                            <img src="${imageUrl}" alt="${image.filename}">
+                        </div>
+                        <div class="image-info">${image.filename}</div>
                     `;
-                    item.addEventListener('click', () => openModal(imageUrl, image));
+                    item.addEventListener('click', () => openImageViewer(image.id));
                     galleryElement.appendChild(item);
                 });
             } catch (error) {
                 console.error("加载图片时出错:", error);
                 galleryElement.innerHTML = `<div class="error">加载图片失败: ${error.message}</div>`;
-                // Ensure error message spans full width
                 galleryElement.className = 'gallery';
             }
         }
 
-        function openModal(imageUrl, imageInfo) {
-            modal.style.display = 'block';
-            modalImg.src = imageUrl;
-            modalInfo.textContent = `${imageInfo.filename} (${imageInfo.size}, ${imageInfo.date})\n文件夹: ${imageInfo.folder}`;
+        function openImageViewer(imageId) {
+            // Pass the image ID and full data to the viewer script
+            window.PhotoAlbumViewer.open(imageId, allImageData);
+            // Switch views
+            galleryView.classList.add('hidden');
+            viewerView.classList.remove('hidden');
         }
 
-        span.onclick = function() {
-            modal.style.display = 'none';
-        }
-
-        window.onclick = function(event) {
-            if (event.target == modal) {
-                modal.style.display = 'none';
-            }
-        }
+        // Listen for back button event from viewer
+        window.addEventListener('viewerClosed', () => {
+             galleryView.classList.remove('hidden');
+             viewerView.classList.add('hidden');
+             // Optionally, reload gallery if an image was deleted/moved
+             // loadGallery();
+        });
 
         window.onload = loadGallery;
     </script>
