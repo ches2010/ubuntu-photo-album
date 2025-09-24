@@ -44,8 +44,10 @@ sudo -u $USER_NAME python3 -m venv venv
 sudo -u $USER_NAME bash -c "source venv/bin/activate && pip install -r requirements.txt"
 
 # 5. 配置提示（不再直接修改配置文件，而是引导用户通过网页设置）
-echo "5/6: 配置说明..."
-read -p "请输入初始图片文件夹的绝对路径 (例如: /home/youruser/photos): " IMAGE_FOLDER_PATH
+echo "5/6: 配置图片文件夹..."
+read -p "请输入存放图片的文件夹的绝对路径 (例如: /home/youruser/photos): " IMAGE_FOLDER_PATH
+read -p "是否扫描子文件夹? (y/N): " SCAN_SUBFOLDERS
+read -p "最大扫描深度 (0表示不限制): " MAX_DEPTH
 
 if [[ ! -d "$IMAGE_FOLDER_PATH" ]]; then
     echo "警告: 指定的路径 '$IMAGE_FOLDER_PATH' 不存在。"
@@ -62,6 +64,8 @@ echo "已为用户 '$USER_NAME' 设置对 '$IMAGE_FOLDER_PATH' 的访问权限�
 
 # 仅设置初始文件夹，其他配置通过网页设置
 sed -i "s|^folder_1 = .*|folder_1 = $IMAGE_FOLDER_PATH|" "$INSTALL_DIR/config.ini"
+sed -i "s|^scan_subfolders = .*|scan_subfolders = $(echo $SCAN_SUBFOLDERS | tr '[:upper:]' '[:lower:]')|" "$INSTALL_DIR/config.ini"
+sed -i "s|^max_depth = .*|max_depth = $MAX_DEPTH|" "$INSTALL_DIR/config.ini"
 
 # 6. 配置 Supervisor 管理 Flask 应用
 echo "6/6: 配置 Supervisor 服务..."
