@@ -86,12 +86,44 @@ def get_configured_folders(config):
                     print(f"警告: 配置的文件夹不存在: {folder_path}")
     return folders
 
+def scan_folder_recursive(folder_path, current_depth=0, max_depth=0):
+    """递归扫描文件夹及其子文件夹中的图片"""
+    images = []
+    # 检查是否达到最大深度
+    if max_depth > 0 and current_depth > max_depth:
+        return images
+        
+    try:
+        with os.scandir(folder_path) as entries:
+            for entry in entries:
+                if entry.is_dir(follow_symlinks=False):
+                    # 递归扫描子文件夹
+                    subfolder_images = scan_folder_recursive(
+                        entry.path, 
+                        current_depth + 1, 
+                        max_depth
+                    )
+                    images.extend(subfolder_images)
+                elif entry.is_file() and allowed_file(entry.name):
+                    images.append(entry.path)
+    except PermissionError:
+        app.logger.warning(f"没有权限访问文件夹: {folder_path}")
+    except Exception as e:
+        app.logger.error(f"扫描文件夹 {folder_path} 时出错: {e}")
+        
+    return images
+
+
 @app.route('/api/images')
 def list_images():
-    """API端点：返回所有配置文件夹中的图片文件列表及其信息"""
+    """API端点：返回所有配置文件夹及其子文件夹中的图片文件列表及其信息"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
     images_per_row = current_config.getint('settings', 'images_per_row', fallback=IMAGES_PER_ROW_DEFAULT)
+    
+    # 获取子文件夹扫描配置
+    scan_subfolders = current_config.getboolean('settings', 'scan_subfolders', fallback=False)
+    max_depth = current_config.getint('settings', 'max_depth', fallback=0)
 
     if not configured_folders:
         app.logger.error("没有配置有效的图片文件夹。")
@@ -99,40 +131,59 @@ def list_images():
 
     all_images = []
     folder_map = {}
+    
     for folder_path in configured_folders:
         try:
-            for filename in os.listdir(folder_path):
-                filepath = os.path.join(folder_path, filename)
-                if os.path.isfile(filepath) and allowed_file(filename):
-                    key = (filename, folder_path)
-                    if key not in folder_map:
-                        size, date = get_file_info(filepath)
-                        folder_index = configured_folders.index(folder_path)
-                        name, ext = os.path.splitext(filename)
-                        unique_id = f"{urllib.parse.quote(name, safe='')}_folder{folder_index}{ext}"
-                        
-                        all_images.append({
-                            'id': unique_id,
-                            'filename': filename,
-                            'folder': folder_path,
-                            'size': size,
-                            'date': date
-                        })
-                        folder_map[key] = True
+            if scan_subfolders:
+                # 递归扫描所有子文件夹
+                filepaths = scan_folder_recursive(folder_path, max_depth=max_depth)
+            else:
+                # 只扫描当前文件夹
+                filepaths = [
+                    os.path.join(folder_path, f) 
+                    for f in os.listdir(folder_path) 
+                    if os.path.isfile(os.path.join(folder_path, f)) and allowed_file(f)
+                ]
+
+            for filepath in filepaths:
+                filename = os.path.basename(filepath)
+                relative_path = os.path.relpath(filepath, folder_path)
+                key = (relative_path, folder_path)
+                
+                if key not in folder_map:
+                    size, date = get_file_info(filepath)
+                    folder_index = configured_folders.index(folder_path)
+                    
+                    # 生成包含相对路径的唯一ID
+                    encoded_path = urllib.parse.quote(relative_path, safe='')
+                    unique_id = f"{encoded_path}_folder{folder_index}"
+                    
+                    all_images.append({
+                        'id': unique_id,
+                        'filename': filename,
+                        'folder': folder_path,
+                        'relative_path': relative_path,  # 新增相对路径信息
+                        'size': size,
+                        'date': date
+                    })
+                    folder_map[key] = True
+                    
         except Exception as e:
             app.logger.error(f"扫描文件夹 {folder_path} 时出错: {e}")
 
-    all_images.sort(key=lambda x: x['filename'].lower())
+    # 按文件夹和相对路径排序
+    all_images.sort(key=lambda x: (x['folder'], x['relative_path'].lower()))
     
     response_data = {
         "images": all_images,
-        "images_per_row": images_per_row
+        "images_per_row": images_per_row,
+        "scan_subfolders": scan_subfolders
     }
     return jsonify(response_data)
 
 @app.route('/images/<path:file_id>')
 def serve_image(file_id):
-    """API端点：根据唯一ID提供图片文件"""
+    """API端点：根据唯一ID提供图片文件（支持子文件夹）"""
     current_config = load_config()
     configured_folders = get_configured_folders(current_config)
 
@@ -143,24 +194,20 @@ def serve_image(file_id):
         parts = file_id.split('_folder')
         if len(parts) != 2:
             abort(404)
-        encoded_name_part, index_ext_part = parts
-        index_ext_split = index_ext_part.split('.', 1)
-        if len(index_ext_split) != 2:
-            abort(404)
-        folder_index_str, ext = index_ext_split
+        encoded_path_part, folder_index_str = parts
         folder_index = int(folder_index_str)
         
-        decoded_name = urllib.parse.unquote(encoded_name_part)
-        filename = f"{decoded_name}.{ext}"
+        decoded_path = urllib.parse.unquote(encoded_path_part)
 
         if folder_index < 0 or folder_index >= len(configured_folders):
             abort(404)
         
         folder_path = configured_folders[folder_index]
-        filepath = os.path.join(folder_path, filename)
+        filepath = os.path.join(folder_path, decoded_path)
         
-        if os.path.exists(filepath) and os.path.isfile(filepath):
-            return send_from_directory(folder_path, filename)
+        if os.path.exists(filepath) and os.path.isfile(filepath) and allowed_file(filepath):
+            # 提供文件时需要返回完整路径的目录和文件名
+            return send_from_directory(os.path.dirname(filepath), os.path.basename(filepath))
         else:
             abort(404)
     except (ValueError, IndexError):
@@ -184,21 +231,16 @@ def delete_image(file_id):
         parts = file_id.split('_folder')
         if len(parts) != 2:
             return jsonify({"error": "无效的文件ID格式。"}), 400
-        encoded_name_part, index_ext_part = parts
-        index_ext_split = index_ext_part.split('.', 1)
-        if len(index_ext_split) != 2:
-            return jsonify({"error": "无效的文件ID格式。"}), 400
-        folder_index_str, ext = index_ext_split
+        encoded_path_part, folder_index_str = parts
         folder_index = int(folder_index_str)
         
-        decoded_name = urllib.parse.unquote(encoded_name_part)
-        filename = f"{decoded_name}.{ext}"
+        decoded_path = urllib.parse.unquote(encoded_path_part)
 
         if folder_index < 0 or folder_index >= len(configured_folders):
             return jsonify({"error": "文件ID对应的文件夹不存在。"}), 404
         
         folder_path = configured_folders[folder_index]
-        filepath = os.path.join(folder_path, filename)
+        filepath = os.path.join(folder_path, decoded_path)
         
         if os.path.exists(filepath) and os.path.isfile(filepath):
             os.remove(filepath)
