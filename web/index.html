@@ -62,15 +62,22 @@
             justify-content: center;
             align-items: center;
             padding: 0;
+            position: relative;
+            min-height: 70vh;
         }
         .modal-content {
             background-color: transparent;
             border: none;
-            max-width: 90%;
+            max-width: 95%;
+        }
+        .modal-image-container {
+            transition: transform 0.3s ease;
+            transform-origin: center;
         }
         .modal-image {
             max-height: 80vh;
             max-width: 100%;
+            transition: all 0.3s ease;
         }
         .modal-footer {
             background-color: rgba(0, 0, 0, 0.7);
@@ -103,6 +110,60 @@
             display: flex;
             align-items: center;
             gap: 10px;
+        }
+        .image-controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        .control-btn {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+        }
+        .navigation-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background-color: rgba(0, 0, 0, 0.5);
+            color: white;
+            border: none;
+            font-size: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            transition: background-color 0.2s;
+        }
+        .navigation-btn:hover {
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+        }
+        .prev-image-btn {
+            left: 20px;
+        }
+        .next-image-btn {
+            right: 20px;
+        }
+        .keyboard-shortcuts {
+            font-size: 0.8em;
+            margin-top: 10px;
+            color: #ccc;
+        }
+        .move-image-container {
+            margin-top: 10px;
+        }
+        .move-image-select {
+            width: auto;
+            display: inline-block;
+            margin-right: 10px;
         }
     </style>
 </head>
@@ -139,16 +200,57 @@
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-body">
-                    <img src="" alt="图片预览" class="modal-image" id="modalImage">
+                    <button class="navigation-btn prev-image-btn" id="prevImageBtn">
+                        <i class="fa fa-chevron-left"></i>
+                    </button>
+                    
+                    <div class="modal-image-container" id="imageContainer">
+                        <img src="" alt="图片预览" class="modal-image" id="modalImage">
+                    </div>
+                    
+                    <button class="navigation-btn next-image-btn" id="nextImageBtn">
+                        <i class="fa fa-chevron-right"></i>
+                    </button>
                 </div>
                 <div class="modal-footer">
                     <div>
                         <h5 id="modalFilename"></h5>
                         <p id="modalInfo"></p>
+                        <div class="keyboard-shortcuts">
+                            <p>键盘快捷键: ← 上一张 | → 下一张 | + 放大 | - 缩小 | 0 重置 | R 旋转 | F 翻转 | Del 删除</p>
+                        </div>
                     </div>
                     <div>
-                        <button type="button" class="btn btn-secondary" id="closeModal">关闭</button>
-                        <button type="button" class="btn btn-danger" id="deleteImage">删除图片</button>
+                        <div class="image-controls">
+                            <button class="btn btn-secondary control-btn" id="zoomIn" title="放大 (快捷键 +)">
+                                <i class="fa fa-search-plus"></i>
+                            </button>
+                            <button class="btn btn-secondary control-btn" id="zoomOut" title="缩小 (快捷键 -)">
+                                <i class="fa fa-search-minus"></i>
+                            </button>
+                            <button class="btn btn-secondary control-btn" id="resetView" title="重置视图 (快捷键 0)">
+                                <i class="fa fa-refresh"></i>
+                            </button>
+                            <button class="btn btn-secondary control-btn" id="rotateImage" title="旋转 (快捷键 R)">
+                                <i class="fa fa-rotate-right"></i>
+                            </button>
+                            <button class="btn btn-secondary control-btn" id="flipImage" title="翻转 (快捷键 F)">
+                                <i class="fa fa-arrows-h"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="move-image-container">
+                            <select id="targetFolder" class="form-select move-image-select">
+                                <option value="">移动到文件夹...</option>
+                                <!-- 文件夹选项将通过JavaScript动态加载 -->
+                            </select>
+                            <button class="btn btn-primary" id="moveImageBtn">移动图片</button>
+                        </div>
+                        
+                        <div class="image-controls" style="margin-top: 15px;">
+                            <button type="button" class="btn btn-secondary" id="closeModal">关闭</button>
+                            <button type="button" class="btn btn-danger" id="deleteImage">删除图片</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -172,6 +274,12 @@
         let totalPages = 1;
         let allImages = [];
         let currentImageIndex = -1;
+        let configuredFolders = [];
+        
+        // 图片变换状态
+        let zoomLevel = 1;
+        let rotation = 0;
+        let flipped = false;
         
         // DOM元素
         const imageGrid = document.getElementById('imageGrid');
@@ -181,15 +289,26 @@
         const perPageSelect = document.getElementById('perPage');
         const imageModal = new bootstrap.Modal(document.getElementById('imageModal'));
         const modalImage = document.getElementById('modalImage');
+        const imageContainer = document.getElementById('imageContainer');
         const modalFilename = document.getElementById('modalFilename');
         const modalInfo = document.getElementById('modalInfo');
         const deleteImageBtn = document.getElementById('deleteImage');
         const closeModalBtn = document.getElementById('closeModal');
         const loadingIndicator = document.getElementById('loadingIndicator');
+        const prevImageBtn = document.getElementById('prevImageBtn');
+        const nextImageBtn = document.getElementById('nextImageBtn');
+        const zoomInBtn = document.getElementById('zoomIn');
+        const zoomOutBtn = document.getElementById('zoomOut');
+        const resetViewBtn = document.getElementById('resetView');
+        const rotateImageBtn = document.getElementById('rotateImage');
+        const flipImageBtn = document.getElementById('flipImage');
+        const targetFolderSelect = document.getElementById('targetFolder');
+        const moveImageBtn = document.getElementById('moveImageBtn');
         
         // 初始化
         document.addEventListener('DOMContentLoaded', () => {
-            // 加载图片
+            // 加载图片和文件夹配置
+            loadFolders();
             loadImages();
             
             // 事件监听
@@ -202,7 +321,68 @@
             });
             deleteImageBtn.addEventListener('click', deleteCurrentImage);
             closeModalBtn.addEventListener('click', () => imageModal.hide());
+            prevImageBtn.addEventListener('click', showPrevImage);
+            nextImageBtn.addEventListener('click', showNextImage);
+            zoomInBtn.addEventListener('click', () => zoomImage(0.1));
+            zoomOutBtn.addEventListener('click', () => zoomImage(-0.1));
+            resetViewBtn.addEventListener('click', resetImageView);
+            rotateImageBtn.addEventListener('click', () => rotateImage(90));
+            flipImageBtn.addEventListener('click', flipImage);
+            moveImageBtn.addEventListener('click', moveCurrentImage);
+            
+            // 模态框事件
+            imageModal._element.addEventListener('show.bs.modal', () => {
+                // 模态框显示时添加键盘事件监听
+                document.addEventListener('keydown', handleKeyPress);
+            });
+            
+            imageModal._element.addEventListener('hide.bs.modal', () => {
+                // 模态框隐藏时移除键盘事件监听
+                document.removeEventListener('keydown', handleKeyPress);
+                // 重置图片变换
+                resetImageView();
+            });
         });
+        
+        // 加载图片文件夹配置
+        function loadFolders() {
+            fetch('/api/config')
+                .then(response => {
+                    if (!response.ok) throw new Error('加载文件夹配置失败');
+                    return response.json();
+                })
+                .then(config => {
+                    configuredFolders = config.image_folders || [];
+                    populateFolderSelect();
+                })
+                .catch(error => {
+                    console.error('加载文件夹出错:', error);
+                });
+        }
+        
+        // 填充文件夹选择下拉框
+        function populateFolderSelect() {
+            // 保存当前选中值
+            const currentValue = targetFolderSelect.value;
+            
+            // 清空现有选项（保留第一个提示选项）
+            while (targetFolderSelect.options.length > 1) {
+                targetFolderSelect.remove(1);
+            }
+            
+            // 添加文件夹选项
+            configuredFolders.forEach((folder, index) => {
+                const option = document.createElement('option');
+                option.value = index;
+                option.textContent = folder;
+                targetFolderSelect.appendChild(option);
+            });
+            
+            // 恢复选中值
+            if (currentValue) {
+                targetFolderSelect.value = currentValue;
+            }
+        }
         
         // 加载图片
         function loadImages() {
@@ -269,10 +449,128 @@
             modalFilename.textContent = image.filename;
             modalInfo.textContent = `大小: ${image.size} | 修改日期: ${image.date} | 路径: ${image.relative_path}`;
             
-            // 存储当前图片ID用于删除
+            // 存储当前图片ID用于删除和移动
             deleteImageBtn.dataset.imageId = image.id;
+            moveImageBtn.dataset.imageId = image.id;
+            
+            // 更新导航按钮状态
+            updateNavigationButtons();
             
             imageModal.show();
+        }
+        
+        // 显示上一张图片
+        function showPrevImage() {
+            if (currentImageIndex > 0) {
+                currentImageIndex--;
+                const prevImage = allImages[currentImageIndex];
+                openImageModal(prevImage, currentImageIndex);
+            }
+        }
+        
+        // 显示下一张图片
+        function showNextImage() {
+            if (currentImageIndex < allImages.length - 1) {
+                currentImageIndex++;
+                const nextImage = allImages[currentImageIndex];
+                openImageModal(nextImage, currentImageIndex);
+            }
+        }
+        
+        // 更新导航按钮状态
+        function updateNavigationButtons() {
+            prevImageBtn.disabled = currentImageIndex <= 0;
+            nextImageBtn.disabled = currentImageIndex >= allImages.length - 1;
+            
+            // 视觉反馈
+            prevImageBtn.style.opacity = currentImageIndex <= 0 ? 0.5 : 1;
+            nextImageBtn.style.opacity = currentImageIndex >= allImages.length - 1 ? 0.5 : 1;
+        }
+        
+        // 缩放图片
+        function zoomImage(amount) {
+            zoomLevel = Math.max(0.1, Math.min(5, zoomLevel + amount));
+            applyImageTransformations();
+        }
+        
+        // 旋转图片
+        function rotateImage(degrees) {
+            rotation = (rotation + degrees) % 360;
+            applyImageTransformations();
+        }
+        
+        // 翻转图片
+        function flipImage() {
+            flipped = !flipped;
+            applyImageTransformations();
+        }
+        
+        // 重置图片视图
+        function resetImageView() {
+            zoomLevel = 1;
+            rotation = 0;
+            flipped = false;
+            applyImageTransformations();
+        }
+        
+        // 应用图片变换
+        function applyImageTransformations() {
+            let transform = `scale(${zoomLevel}) rotate(${rotation}deg)`;
+            if (flipped) {
+                transform += ' scaleX(-1)';
+            }
+            imageContainer.style.transform = transform;
+        }
+        
+        // 处理键盘事件
+        function handleKeyPress(e) {
+            // 如果正在输入文本，不处理快捷键
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                return;
+            }
+            
+            switch (e.key) {
+                case 'ArrowLeft':
+                    e.preventDefault();
+                    showPrevImage();
+                    break;
+                case 'ArrowRight':
+                    e.preventDefault();
+                    showNextImage();
+                    break;
+                case '+':
+                case '=':
+                    e.preventDefault();
+                    zoomImage(0.1);
+                    break;
+                case '-':
+                case '_':
+                    e.preventDefault();
+                    zoomImage(-0.1);
+                    break;
+                case '0':
+                    e.preventDefault();
+                    resetImageView();
+                    break;
+                case 'r':
+                case 'R':
+                    e.preventDefault();
+                    rotateImage(90);
+                    break;
+                case 'f':
+                case 'F':
+                    e.preventDefault();
+                    flipImage();
+                    break;
+                case 'Delete':
+                    e.preventDefault();
+                    deleteCurrentImage();
+                    break;
+                case 'Escape':
+                    e.preventDefault();
+                    imageModal.hide();
+                    break;
+            }
         }
         
         // 删除当前图片
@@ -295,37 +593,84 @@
                 .then(data => {
                     showNotification(data.message, 'success');
                     
-                    // 关闭当前模态框
+                    // 记录当前索引以便确定下一张图片
+                    const deletedIndex = currentImageIndex;
+                    
+                    // 关闭模态框
                     imageModal.hide();
                     
-                    // 显示下一张图片或刷新页面
-                    if (allImages.length > 1) {
-                        // 确定下一张图片的索引
-                        const nextIndex = currentImageIndex < allImages.length - 1 
-                            ? currentImageIndex 
-                            : currentImageIndex - 1;
-                        
-                        // 重新加载当前页图片
-                        loadImages().then(() => {
-                            // 如果还有图片，打开下一张
-                            if (allImages.length > 0) {
-                                const nextImageIndex = Math.min(nextIndex, allImages.length - 1);
-                                openImageModal(allImages[nextImageIndex], nextImageIndex);
-                            }
-                        });
-                    } else {
-                        // 当前页已没有图片，返回上一页
-                        if (currentPage > 1) {
+                    // 重新加载当前页图片
+                    loadImages().then(() => {
+                        // 如果还有图片，显示下一张或最后一张
+                        if (allImages.length > 0) {
+                            // 计算新索引 - 如果删除的是最后一张，显示前一张
+                            const newIndex = deletedIndex < allImages.length ? deletedIndex : allImages.length - 1;
+                            openImageModal(allImages[newIndex], newIndex);
+                        } else if (currentPage > 1) {
+                            // 当前页已无图片，跳转到上一页
                             goToPage(currentPage - 1);
-                        } else {
-                            // 重新加载当前页
-                            loadImages();
                         }
-                    }
+                    });
                 })
                 .catch(error => {
                     console.error('删除图片出错:', error);
                     showNotification('删除图片失败: ' + error.message, 'error');
+                });
+            }
+        }
+        
+        // 移动当前图片
+        function moveCurrentImage() {
+            const imageId = moveImageBtn.dataset.imageId;
+            const targetFolderIndex = targetFolderSelect.value;
+            
+            if (!imageId || targetFolderIndex === '') {
+                showNotification('请选择目标文件夹', 'warning');
+                return;
+            }
+            
+            if (confirm('确定要移动这张图片吗？')) {
+                fetch(`/api/images/${imageId}/move`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        target_folder_index: targetFolderIndex
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        return response.json().then(data => {
+                            throw new Error(data.error || '移动失败');
+                        });
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    showNotification(data.message, 'success');
+                    
+                    // 记录当前索引以便确定下一张图片
+                    const currentIndex = currentImageIndex;
+                    
+                    // 关闭模态框
+                    imageModal.hide();
+                    
+                    // 重新加载当前页图片
+                    loadImages().then(() => {
+                        // 如果还有图片，显示下一张
+                        if (allImages.length > 0) {
+                            const newIndex = Math.min(currentIndex, allImages.length - 1);
+                            openImageModal(allImages[newIndex], newIndex);
+                        } else if (currentPage > 1) {
+                            // 当前页已无图片，跳转到上一页
+                            goToPage(currentPage - 1);
+                        }
+                    });
+                })
+                .catch(error => {
+                    console.error('移动图片出错:', error);
+                    showNotification('移动图片失败: ' + error.message, 'error');
                 });
             }
         }
@@ -367,6 +712,8 @@
                 notification.classList.add('bg-success');
             } else if (type === 'error') {
                 notification.classList.add('bg-danger');
+            } else if (type === 'warning') {
+                notification.classList.add('bg-warning', 'text-dark');
             } else {
                 notification.classList.add('bg-info');
             }
