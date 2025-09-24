@@ -6,31 +6,29 @@
     <title>相册浏览</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css">
-    <!-- 引入外部样式表 -->
     <link rel="stylesheet" href="/css/styles.css">
 </head>
 <body>
     <div class="gallery-container">
         <div class="gallery-header">
             <h1>相册浏览</h1>
-            <div class="header-controls">
-                <!-- 主题选择器 -->
-                <div class="theme-selector">
-                    <label for="themeSelect" class="me-2">主题:</label>
-                    <select id="themeSelect" class="form-select form-select-sm">
-                        <option value="light">浅色模式</option>
-                        <option value="dark">深色模式</option>
-                        <option value="sepia">复古模式</option>
-                    </select>
-                </div>
-                
-                <div class="per-page-selector ms-3">
-                    <span>每页显示:</span>
-                    <select id="perPage" class="form-select form-select-sm ms-2">
-                        <option value="40">40张</option>
-                        <option value="80">80张</option>
-                    </select>
-                </div>
+            
+            <!-- 主题选择器 -->
+            <div class="theme-selector">
+                <span>主题:</span>
+                <select id="themeSelector" class="form-select">
+                    <option value="light">浅色模式</option>
+                    <option value="dark">深色模式</option>
+                    <option value="vintage">复古模式</option>
+                </select>
+            </div>
+            
+            <div class="per-page-selector">
+                <span>每页显示:</span>
+                <select id="perPage" class="form-select">
+                    <option value="40">40张</option>
+                    <option value="80">80张</option>
+                </select>
             </div>
         </div>
         
@@ -46,7 +44,6 @@
             <button class="btn btn-secondary pagination-btn" id="prevPage" disabled>上一页</button>
             <span class="page-info" id="pageInfo">第 1 页 / 共 1 页</span>
             
-            <!-- 页码跳转控件 -->
             <div class="page-jump">
                 <input type="number" id="pageJumpInput" class="form-control page-input" min="1" placeholder="页码">
                 <button class="btn btn-primary" id="jumpToPageBtn">跳转</button>
@@ -127,7 +124,7 @@
     <div id="notification" class="notification"></div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <!-- 引入外部脚本 -->
+    <script src="/js/theme.js"></script>
     <script src="/js/gallery.js"></script>
 </body>
 </html>
