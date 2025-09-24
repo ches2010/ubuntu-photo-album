@@ -58,6 +58,10 @@ h1 {
 
 /* Dynamic column classes for fixed-size items */
 /* We calculate width based on 100% / columns - gap */
+/* This is a rough approximation. JS calculates it more precisely. */
+/* For CSS-only, we can use aspect-ratio if supported, or a fixed height relative to width */
+/* Let's use padding-top trick for a fixed aspect ratio (e.g., 4:3 or 1:1) */
+/* 1:1 Square */
 .gallery.grid-cols-1 { grid-template-columns: repeat(1, 1fr); }
 .gallery.grid-cols-2 { grid-template-columns: repeat(2, 1fr); }
 .gallery.grid-cols-3 { grid-template-columns: repeat(3, 1fr); }
@@ -174,6 +178,33 @@ h1 {
     background-color: #555;
     border-color: #666;
 }
+/* --- Styles for New Navigation Buttons --- */
+.viewer-btn-nav {
+    /* Inherit base button styles */
+    background-color: #444;
+    color: #eee;
+    border: 1px solid #555;
+    padding: 8px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    transition: background-color 0.2s, border-color 0.2s;
+    /* Specific styles for navigation */
+    font-weight: bold;
+    min-width: 80px; /* Ensures consistent button width */
+    text-align: center;
+}
+.viewer-btn-nav:hover:not(:disabled) {
+    background-color: #555;
+    border-color: #666;
+}
+.viewer-btn-nav:disabled {
+    background-color: #333;
+    color: #777;
+    border-color: #444;
+    cursor: not-allowed;
+}
+/* --- End Styles for New Navigation Buttons --- */
 .viewer-btn-danger {
     background-color: #c62828;
     border-color: #d32f2f;
@@ -340,9 +371,12 @@ h1 {
         padding: 8px 10px;
         gap: 6px;
     }
-    .viewer-btn, .viewer-select {
+    .viewer-btn, .viewer-select, .viewer-btn-nav {
         padding: 6px 10px;
         font-size: 0.85em;
+    }
+    .viewer-btn-nav {
+        min-width: 70px; /* Adjust min-width for smaller screens */
     }
     .viewer-info {
         padding: 10px 15px;
