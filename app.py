@@ -358,17 +358,6 @@ def settings_page():
 
 # --- 设置相关的 API ---
 
-@app.route('/api/config', methods=['GET'])
-def get_config_api():
-    """API端点：获取当前配置"""
-    current_config = load_config()
-    config_dict = {}
-    for section in current_config.sections():
-        config_dict[section] = {}
-        for key, value in current_config.items(section):
-            config_dict[section][key] = value
-    return jsonify(config_dict)
-
 @app.route('/api/config', methods=['GET', 'POST'])
 def handle_config():
     """处理配置的获取和保存"""
