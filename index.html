@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>图片相册</title>
+    <link rel="stylesheet" href="css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <!-- 顶部导航栏 -->
+    <header class="header">
+        <div class="container">
+            <h1 class="logo"><i class="fas fa-images"></i> 图片相册</h1>
+            <div class="controls">
+                <div class="per-page-control">
+                    <label for="perPageSelect">每页显示:</label>
+                    <select id="perPageSelect">
+                        <option value="20">20</option>
+                        <option value="40" selected>40</option>
+                        <option value="80">80</option>
+                        <option value="120">120</option>
+                    </select>
+                </div>
+                <button id="refreshBtn" class="btn"><i class="fas fa-sync-alt"></i> 刷新</button>
+                <button id="settingsBtn" class="btn"><i class="fas fa-cog"></i> 设置</button>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="container main-content">
+        <!-- 加载状态 -->
+        <div id="loading" class="loading hidden">
+            <div class="spinner"></div>
+            <p>加载中...</p>
+        </div>
+
+        <!-- 空状态 -->
+        <div id="emptyState" class="empty-state hidden">
+            <i class="fas fa-image fa-5x"></i>
+            <h2>没有找到图片</h2>
+            <p>请检查设置中的图片文件夹路径是否正确</p>
+            <button id="emptySettingsBtn" class="btn" onclick="openSettingsModal()">
+                <i class="fas fa-cog"></i> 前往设置
+            </button>
+        </div>
+
+        <!-- 错误状态 -->
+        <div id="errorState" class="error-state hidden">
+            <i class="fas fa-exclamation-triangle fa-5x"></i>
+            <h2>加载失败</h2>
+            <p id="errorMessage">加载图片时发生错误</p>
+            <button id="errorRefreshBtn" class="btn" onclick="loadImages(true)">
+                <i class="fas fa-sync-alt"></i> 重试
+            </button>
+        </div>
+
+        <!-- 图片网格 -->
+        <div id="imageGrid" class="image-grid"></div>
+
+        <!-- 分页控件 -->
+        <div id="pagination" class="pagination hidden">
+            <button id="prevPage" class="btn">
+                <i class="fas fa-chevron-left"></i> 上一页
+            </button>
+            <span id="pageInfo" class="page-info"></span>
+            <button id="nextPage" class="btn">
+                下一页 <i class="fas fa-chevron-right"></i>
+            </button>
+        </div>
+    </main>
+
+    <!-- 图片查看模态框 -->
+    <div id="imageModal" class="modal hidden">
+        <div class="modal-content">
+            <button id="closeModal" class="modal-close">&times;</button>
+            <div class="modal-image-container">
+                <img id="modalImage" src="" alt="图片预览" class="modal-image">
+            </div>
+            <div class="modal-details">
+                <h2 id="modalTitle" class="modal-title"></h2>
+                <p><strong>路径:</strong> <span id="modalPath"></span></p>
+                <p><strong>大小:</strong> <span id="modalSize"></span></p>
+                <p><strong>修改时间:</strong> <span id="modalModified"></span></p>
+                <p><strong>格式:</strong> <span id="modalExtension"></span></p>
+                <a id="downloadLink" class="btn download-btn" download>
+                    <i class="fas fa-download"></i> 下载图片
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 设置模态框 -->
+    <div id="settingsModal" class="modal hidden">
+        <div class="modal-content settings-modal">
+            <button id="closeSettings" class="modal-close">&times;</button>
+            <h2 class="modal-title">设置</h2>
+            <form id="settingsForm">
+                <div class="form-group">
+                    <label for="imageFolder">图片文件夹路径</label>
+                    <input type="text" id="imageFolder" required placeholder="/path/to/your/images">
+                </div>
+                <div class="form-group">
+                    <label for="scanSubfolders">
+                        <input type="checkbox" id="scanSubfolders"> 扫描子文件夹
+                    </label>
+                </div>
+                <div class="form-group">
+                    <label for="maxDepth">最大扫描深度 (0表示无限制)</label>
+                    <input type="number" id="maxDepth" min="0" value="0">
+                </div>
+                <div class="form-group">
+                    <label for="imagesPerRow">每行显示图片数量</label>
+                    <input type="number" id="imagesPerRow" min="1" max="10" value="5">
+                </div>
+                <div class="form-group">
+                    <label for="cacheDuration">缓存有效期 (秒)</label>
+                    <input type="number" id="cacheDuration" min="60" value="600">
+                </div>
+                <div class="form-actions">
+                    <button type="button" id="cancelSettings" class="btn btn-secondary">取消</button>
+                    <button type="submit" class="btn">保存设置</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- 页脚 -->
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2023 图片相册 | 一个简单的图片浏览工具</p>
+        </div>
+    </footer>
+
+    <script src="js/app.js"></script>
+</body>
+</html>
+    
