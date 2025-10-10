@@ -1,284 +1,263 @@
 <?php
-// 定义项目根目录
-define('ROOT_DIR', __DIR__);
+// 自动检测项目根目录（支持git clone部署）
+define('PROJECT_ROOT', __DIR__);
 
 // 加载配置
-$config = loadConfig();
-
-// 路由处理
-handleRequest();
-
-/**
- * 加载配置文件
- */
-function loadConfig() {
-    $configFile = ROOT_DIR . '/config.ini';
-    if (!file_exists($configFile)) {
-        // 创建默认配置
-        $defaultConfig = <<<INI
-[settings]
-image_folder = "/var/www/photos"
+$configFile = PROJECT_ROOT . '/config.ini';
+// 如果配置文件不存在，创建默认配置
+if (!file_exists($configFile)) {
+    $defaultConfig = '[settings]
+image_folder = "/mnt/sda2/www/photos"
 scan_subfolders = "true"
 max_depth = "0"
 images_per_row = "5"
 cache_duration = "600"
-INI;
-        file_put_contents($configFile, $defaultConfig);
-    }
-    return parse_ini_file($configFile, true);
+cache_path = "' . PROJECT_ROOT . '/cache"
+';
+    file_put_contents($configFile, $defaultConfig);
+}
+$config = parse_ini_file($configFile, true);
+
+// 确保缓存目录存在
+if (!file_exists($config['settings']['cache_path'])) {
+    mkdir($config['settings']['cache_path'], 0755, true);
 }
 
-/**
- * 处理请求路由
- */
-function handleRequest() {
-    $requestUri = $_SERVER['REQUEST_URI'];
-    
-    // API路由 - 图片列表
-    if (preg_match('/^\/api\/images/', $requestUri)) {
-        handleImagesApi();
-        exit;
-    }
-    
-    // API路由 - 设置
-    if (preg_match('/^\/api\/settings/', $requestUri)) {
-        handleSettingsApi();
-        exit;
-    }
-    
-    // 图片访问路由
-    if (preg_match('/^\/images\/(.+)$/', $requestUri, $matches)) {
-        handleImageAccess($matches[1]);
-        exit;
-    }
-    
-    // 静态文件路由
-    if (preg_match('/^\/(css|js|fonts)\/.+/', $requestUri, $matches)) {
-        $path = ROOT_DIR . $requestUri;
-        if (file_exists($path) && is_file($path)) {
-            serveStaticFile($path);
-            exit;
-        }
-    }
-    
-    // 首页路由
-    if ($requestUri === '/' || $requestUri === '/index.html') {
-        serveIndexPage();
-        exit;
-    }
-    
-    // 404 Not Found
-    http_response_code(404);
-    echo "404 Not Found";
+// 路由处理
+$requestUri = $_SERVER['REQUEST_URI'];
+
+// 处理API请求
+if (strpos($requestUri, '/api/') === 0) {
+    handleApiRequest($requestUri, $config);
     exit;
 }
 
-/**
- * 处理图片列表API请求
- */
-function handleImagesApi() {
-    global $config;
-    
-    // 获取分页参数
-    $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
-    $perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 40;
-    $forceRefresh = isset($_GET['t']);
-    
-    // 扫描图片
-    $images = scanImages($forceRefresh);
-    $totalImages = count($images);
-    $totalPages = max(1, (int)ceil($totalImages / $perPage));
-    
-    // 分页处理
-    $start = ($page - 1) * $perPage;
-    $paginatedImages = array_slice($images, $start, $perPage);
-    
-    // 返回JSON响应
-    header('Content-Type: application/json');
-    echo json_encode([
-        'images' => $paginatedImages,
-        'page' => $page,
-        'per_page' => $perPage,
-        'total_images' => $totalImages,
-        'total_pages' => $totalPages,
-        'images_per_row' => $config['settings']['images_per_row'] ?? 5
-    ]);
+// 处理图片请求
+if (strpos($requestUri, '/images/') === 0) {
+    handleImageRequest($requestUri, $config);
+    exit;
 }
 
-/**
- * 处理设置API请求
- */
-function handleSettingsApi() {
-    global $config;
+// 处理静态文件
+if (preg_match('/\.(css|js|png|jpg|jpeg|gif|webp|ico)$/', $requestUri)) {
+    $filePath = PROJECT_ROOT . $requestUri;
+    if (file_exists($filePath) && is_file($filePath)) {
+        // 设置适当的MIME类型
+        $mimeType = getMimeType($filePath);
+        header("Content-Type: $mimeType");
+        readfile($filePath);
+        exit;
+    }
+}
+
+// 提供首页
+if ($requestUri === '/' || $requestUri === '/index.html') {
+    readfile(PROJECT_ROOT . '/index.html');
+    exit;
+}
+
+// 404响应
+http_response_code(404);
+echo "404 Not Found";
+exit;
+
+// API请求处理函数
+function handleApiRequest($uri, $config) {
+    header("Content-Type: application/json");
     
-    if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-        // 保存设置
+    // 图片列表API
+    if ($uri === '/api/images') {
+        $page = $_GET['page'] ?? 1;
+        $perPage = $_GET['per_page'] ?? 40;
+        $forceRefresh = isset($_GET['t']);
+        
+        $result = getImages($config, (int)$page, (int)$perPage, $forceRefresh);
+        echo json_encode($result);
+        return;
+    }
+    
+    // 设置API - 获取
+    if ($uri === '/api/settings' && $_SERVER['REQUEST_METHOD'] === 'GET') {
+        echo json_encode($config['settings']);
+        return;
+    }
+    
+    // 设置API - 保存
+    if ($uri === '/api/settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         $data = json_decode(file_get_contents('php://input'), true);
         if ($data) {
-            $config['settings'] = array_merge(
-                $config['settings'],
-                array_intersect_key($data, $config['settings'])
-            );
+            // 更新配置
+            foreach ($data as $key => $value) {
+                if (isset($config['settings'][$key])) {
+                    $config['settings'][$key] = $value;
+                }
+            }
             
-            // 写入配置文件
+            // 保存配置文件
             $iniContent = "[settings]\n";
             foreach ($config['settings'] as $key => $value) {
-                $iniContent .= "{$key} = \"{$value}\"\n";
+                $iniContent .= "$key = \"$value\"\n";
             }
-            file_put_contents(ROOT_DIR . '/config.ini', $iniContent);
+            
+            file_put_contents(PROJECT_ROOT . '/config.ini', $iniContent);
             
             // 清除缓存
-            clearImageCache();
+            clearCache($config);
             
-            header('Content-Type: application/json');
-            echo json_encode(['status' => 'success', 'message' => '设置已保存']);
-            exit;
+            echo json_encode(['status' => 'success']);
+            return;
         }
         
-        header('Content-Type: application/json');
-        echo json_encode(['status' => 'error', 'message' => '无效的设置数据']);
-        exit;
+        echo json_encode(['status' => 'error', 'message' => '无效的数据']);
+        return;
     }
     
-    // 获取当前设置
-    header('Content-Type: application/json');
-    echo json_encode($config['settings']);
-    exit;
+    // API不存在
+    http_response_code(404);
+    echo json_encode(['error' => 'API不存在']);
 }
 
-/**
- * 处理图片访问请求
- */
-function handleImageAccess($fileId) {
-    // 解析文件ID
-    list($encodedPath, $folderIdx) = explode('_folder', $fileId);
-    $relativePath = urldecode($encodedPath);
-    
-    // 获取图片文件夹
-    global $config;
-    $imageFolder = $config['settings']['image_folder'];
-    
-    // 构建完整路径
-    $filePath = $imageFolder . '/' . $relativePath;
-    
-    // 安全检查 - 确保文件在指定目录内
-    $realImageFolder = realpath($imageFolder);
-    $realFilePath = realpath($filePath);
-    
-    if ($realFilePath && strpos($realFilePath, $realImageFolder) === 0 && is_file($realFilePath)) {
-        // 输出图片
-        $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-        $mimes = [
-            'png' => 'image/png',
-            'jpg' => 'image/jpeg',
-            'jpeg' => 'image/jpeg',
-            'gif' => 'image/gif',
-            'webp' => 'image/webp',
-            'bmp' => 'image/bmp',
-            'tiff' => 'image/tiff'
-        ];
-        
-        header('Content-Type: ' . ($mimes[$ext] ?? 'image/*'));
-        header('Cache-Control: public, max-age=3600');
-        readfile($realFilePath);
+// 图片请求处理函数
+function handleImageRequest($uri, $config) {
+    $pathParts = explode('/', trim($uri, '/'));
+    if (count($pathParts) < 2) {
+        http_response_code(404);
         exit;
     }
     
-    // 图片不存在
+    $fileId = implode('/', array_slice($pathParts, 1));
+    list($encodedPath, $folderIdx) = explode('_folder', $fileId);
+    
+    if ($encodedPath === null || $folderIdx === null) {
+        http_response_code(404);
+        exit;
+    }
+    
+    $relativePath = urldecode($encodedPath);
+    $imageFolder = $config['settings']['image_folder'];
+    
+    $filePath = $imageFolder . '/' . $relativePath;
+    
+    if (file_exists($filePath) && is_file($filePath) && 
+        strpos(realpath($filePath), realpath($imageFolder)) === 0) {
+        
+        $mimeType = getMimeType($filePath);
+        header("Content-Type: $mimeType");
+        readfile($filePath);
+        exit;
+    }
+    
     http_response_code(404);
     exit;
 }
 
-/**
- * 扫描图片文件
- */
-function scanImages($forceRefresh = false) {
-    global $config;
-    
-    // 缓存处理
-    $cacheDir = ROOT_DIR . '/cache';
-    $cacheFile = $cacheDir . '/images_cache.json';
-    $cacheDuration = (int)($config['settings']['cache_duration'] ?? 600);
-    
-    // 如果缓存有效且不需要强制刷新，则使用缓存
-    if (!$forceRefresh && file_exists($cacheFile) && 
-        (time() - filemtime($cacheFile) < $cacheDuration)) {
-        return json_decode(file_get_contents($cacheFile), true);
-    }
-    
-    // 确保缓存目录存在
-    if (!is_dir($cacheDir)) {
-        mkdir($cacheDir, 0755, true);
-    }
-    
-    // 扫描图片
+// 获取图片列表
+function getImages($config, $page = 1, $perPage = 40, $forceRefresh = false) {
     $imageFolder = $config['settings']['image_folder'];
     $scanSubfolders = $config['settings']['scan_subfolders'] === 'true';
-    $maxDepth = (int)($config['settings']['max_depth'] ?? 0);
+    $maxDepth = (int)$config['settings']['max_depth'];
+    $cacheDuration = (int)$config['settings']['cache_duration'];
+    $cachePath = $config['settings']['cache_path'];
     
-    $allowedExt = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff'];
-    $images = [];
+    // 确保缓存目录存在
+    if (!file_exists($cachePath)) {
+        mkdir($cachePath, 0755, true);
+    }
     
-    if (is_dir($imageFolder)) {
-        // 构建迭代器
-        $flags = RecursiveDirectoryIterator::SKIP_DOTS;
-        $iterator = new RecursiveDirectoryIterator($imageFolder, $flags);
+    // 生成缓存键
+    $cacheKey = md5($imageFolder . ($scanSubfolders ? '1' : '0') . $maxDepth);
+    $cacheFile = $cachePath . '/' . $cacheKey . '.json';
+    
+    // 检查缓存
+    $allImages = [];
+    if (!$forceRefresh && file_exists($cacheFile) && 
+        time() - filemtime($cacheFile) < $cacheDuration) {
+        $allImages = json_decode(file_get_contents($cacheFile), true);
+    } else {
+        // 扫描图片
+        $allowedExt = ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp', 'tiff'];
         
-        if ($scanSubfolders) {
-            $iterator = new RecursiveIteratorIterator(
-                $iterator,
-                RecursiveIteratorIterator::SELF_FIRST
-            );
+        if (is_dir($imageFolder)) {
+            $allImages = scanImages($imageFolder, $imageFolder, $allowedExt, $scanSubfolders, $maxDepth);
             
-            // 设置最大深度
-            if ($maxDepth > 0) {
-                $iterator->setMaxDepth($maxDepth);
-            }
-        }
-        
-        // 遍历文件
-        foreach ($iterator as $file) {
-            if ($file->isFile()) {
-                $ext = strtolower($file->getExtension());
-                if (in_array($ext, $allowedExt)) {
-                    $relativePath = str_replace($imageFolder . '/', '', $file->getPathname());
-                    $folder = str_replace($imageFolder, '', $file->getPath());
-                    $folder = $folder ? ltrim($folder, '/') : '';
-                    
-                    $images[] = [
-                        'id' => urlencode($relativePath) . "_folder0",
-                        'filename' => $file->getFilename(),
-                        'folder' => $folder,
-                        'size' => formatSize($file->getSize()),
-                        'modified' => date('Y-m-d H:i:s', $file->getMTime()),
-                        'extension' => $ext
-                    ];
-                }
-            }
+            // 保存缓存
+            file_put_contents($cacheFile, json_encode($allImages));
         }
     }
     
-    // 保存缓存
-    file_put_contents($cacheFile, json_encode($images));
+    // 分页处理
+    $total = count($allImages);
+    $totalPages = max(1, (int)ceil($total / $perPage));
+    $page = max(1, min($page, $totalPages));
+    $start = ($page - 1) * $perPage;
+    $paginated = array_slice($allImages, $start, $perPage);
+    
+    return [
+        'images' => $paginated,
+        'page' => $page,
+        'per_page' => $perPage,
+        'total_images' => $total,
+        'total_pages' => $totalPages,
+        'images_per_row' => (int)$config['settings']['images_per_row']
+    ];
+}
+
+// 扫描图片文件夹
+function scanImages($rootFolder, $currentFolder, $allowedExt, $scanSubfolders, $maxDepth, $currentDepth = 0) {
+    $images = [];
+    $iterator = new DirectoryIterator($currentFolder);
+    
+    foreach ($iterator as $fileinfo) {
+        if ($fileinfo->isDot()) continue;
+        
+        // 检查深度限制
+        if ($currentDepth > $maxDepth && $maxDepth != 0) continue;
+        
+        if ($fileinfo->isDir() && $scanSubfolders) {
+            // 递归扫描子文件夹
+            $subfolderImages = scanImages(
+                $rootFolder, 
+                $fileinfo->getPathname(), 
+                $allowedExt, 
+                $scanSubfolders, 
+                $maxDepth, 
+                $currentDepth + 1
+            );
+            $images = array_merge($images, $subfolderImages);
+        } elseif ($fileinfo->isFile()) {
+            // 检查文件扩展名
+            $ext = strtolower($fileinfo->getExtension());
+            if (in_array($ext, $allowedExt)) {
+                $relativePath = str_replace($rootFolder . '/', '', $fileinfo->getPathname());
+                $folderIdx = 0; // 单文件夹模式下固定为0
+                
+                $images[] = [
+                    'id' => urlencode($relativePath) . "_folder{$folderIdx}",
+                    'filename' => $fileinfo->getFilename(),
+                    'folder' => str_replace($rootFolder . '/', '', $fileinfo->getPath()),
+                    'relative_path' => $relativePath,
+                    'size' => formatSize($fileinfo->getSize()),
+                    'modified' => date('Y-m-d H:i:s', $fileinfo->getMTime()),
+                    'extension' => $ext
+                ];
+            }
+        }
+    }
     
     return $images;
 }
 
-/**
- * 清除图片缓存
- */
-function clearImageCache() {
-    $cacheFile = ROOT_DIR . '/cache/images_cache.json';
-    if (file_exists($cacheFile)) {
-        unlink($cacheFile);
-    }
+// 格式化文件大小
+function formatSize($bytes) {
+    if ($bytes < 1024) return "$bytes B";
+    if ($bytes < 1048576) return number_format($bytes / 1024, 1) . " KB";
+    if ($bytes < 1073741824) return number_format($bytes / 1048576, 1) . " MB";
+    return number_format($bytes / 1073741824, 1) . " GB";
 }
 
-/**
- * 提供静态文件
- */
-function serveStaticFile($path) {
-    $ext = pathinfo($path, PATHINFO_EXTENSION);
+// 获取MIME类型
+function getMimeType($filePath) {
+    $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
     $mimes = [
         'css' => 'text/css',
         'js' => 'application/javascript',
@@ -287,39 +266,25 @@ function serveStaticFile($path) {
         'jpeg' => 'image/jpeg',
         'gif' => 'image/gif',
         'webp' => 'image/webp',
+        'ico' => 'image/x-icon',
         'svg' => 'image/svg+xml',
         'woff' => 'font/woff',
-        'woff2' => 'font/woff2',
-        'ttf' => 'font/ttf',
-        'eot' => 'font/eot'
+        'woff2' => 'font/woff2'
     ];
     
-    header('Content-Type: ' . ($mimes[$ext] ?? 'application/octet-stream'));
-    header('Cache-Control: public, max-age=86400'); // 缓存1天
-    readfile($path);
+    return $mimes[$ext] ?? 'application/octet-stream';
 }
 
-/**
- * 提供首页
- */
-function serveIndexPage() {
-    $indexFile = ROOT_DIR . '/index.html';
-    if (file_exists($indexFile)) {
-        header('Content-Type: text/html');
-        readfile($indexFile);
-    } else {
-        http_response_code(404);
-        echo "Index file not found";
+// 清除缓存
+function clearCache($config) {
+    $cachePath = $config['settings']['cache_path'];
+    if (file_exists($cachePath) && is_dir($cachePath)) {
+        $files = glob($cachePath . '/*.json');
+        foreach ($files as $file) {
+            if (is_file($file)) {
+                unlink($file);
+            }
+        }
     }
-}
-
-/**
- * 格式化文件大小
- */
-function formatSize($bytes) {
-    if ($bytes < 1024) return "$bytes B";
-    if ($bytes < 1048576) return number_format($bytes / 1024, 1) . " KB";
-    if ($bytes < 1073741824) return number_format($bytes / 1048576, 1) . " MB";
-    return number_format($bytes / 1073741824, 1) . " GB";
 }
     
