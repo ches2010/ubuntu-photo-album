@@ -1,301 +1,341 @@
-// 全局状态
-const state = {
-    currentPage: 1,
-    perPage: 40,
-    totalPages: 0,
-    totalImages: 0,
-    imagesPerRow: 5
-};
+// 确保DOM完全加载后执行
+document.addEventListener('DOMContentLoaded', function() {
+    // 全局状态
+    const state = {
+        currentPage: 1,
+        perPage: 40,
+        totalPages: 0,
+        totalImages: 0,
+        imagesPerRow: 5
+    };
 
-// DOM 加载完成后初始化
-document.addEventListener('DOMContentLoaded', () => {
-    // 加载图片列表
-    loadImages();
-    
-    // 事件监听
-    document.getElementById('prevPage').addEventListener('click', () => {
-        if (state.currentPage > 1) {
-            state.currentPage--;
+    // 获取DOM元素并绑定事件（使用更可靠的获取方式）
+    const refreshBtn = document.getElementById('refreshBtn');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const prevPageBtn = document.getElementById('prevPage');
+    const nextPageBtn = document.getElementById('nextPage');
+    const perPageSelect = document.getElementById('perPageSelect');
+    const settingsForm = document.getElementById('settingsForm');
+    const cancelSettingsBtn = document.getElementById('cancelSettings');
+    const closeSettingsBtn = document.getElementById('closeSettings');
+    const imageModal = document.getElementById('imageModal');
+    const closeModalBtn = document.getElementById('closeModal');
+
+    // 绑定按钮事件（增加存在性检查）
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', function() {
+            console.log('刷新按钮被点击'); // 调试日志
+            loadImages(true);
+        });
+    } else {
+        console.error('未找到刷新按钮元素');
+    }
+
+    if (settingsBtn) {
+        settingsBtn.addEventListener('click', function() {
+            console.log('设置按钮被点击'); // 调试日志
+            openSettingsModal();
+        });
+    } else {
+        console.error('未找到设置按钮元素');
+    }
+
+    if (prevPageBtn) {
+        prevPageBtn.addEventListener('click', function() {
+            if (state.currentPage > 1) {
+                state.currentPage--;
+                loadImages();
+            }
+        });
+    }
+
+    if (nextPageBtn) {
+        nextPageBtn.addEventListener('click', function() {
+            if (state.currentPage < state.totalPages) {
+                state.currentPage++;
+                loadImages();
+            }
+        });
+    }
+
+    if (perPageSelect) {
+        perPageSelect.addEventListener('change', function(e) {
+            state.perPage = parseInt(e.target.value);
+            state.currentPage = 1;
             loadImages();
-        }
-    });
-    
-    document.getElementById('nextPage').addEventListener('click', () => {
-        if (state.currentPage < state.totalPages) {
-            state.currentPage++;
-            loadImages();
-        }
-    });
-    
-    document.getElementById('perPageSelect').addEventListener('change', (e) => {
-        state.perPage = parseInt(e.target.value);
-        state.currentPage = 1;
-        loadImages();
-    });
-    
-    document.getElementById('refreshBtn').addEventListener('click', () => {
-        loadImages(true);
-    });
-    
-    document.getElementById('settingsBtn').addEventListener('click', openSettingsModal);
-    document.getElementById('closeSettings').addEventListener('click', closeSettingsModal);
-    document.getElementById('cancelSettings').addEventListener('click', closeSettingsModal);
-    document.getElementById('settingsForm').addEventListener('submit', saveSettings);
-    document.getElementById('closeModal').addEventListener('click', closeImageModal);
-    document.getElementById('emptySettingsBtn').addEventListener('click', openSettingsModal);
-    document.getElementById('errorRefreshBtn').addEventListener('click', () => loadImages(true));
-    
-    // 点击模态框背景关闭
-    document.getElementById('imageModal').addEventListener('click', (e) => {
-        if (e.target === document.getElementById('imageModal')) {
-            closeImageModal();
-        }
-    });
-    
-    // 按ESC键关闭模态框
-    document.addEventListener('keydown', (e) => {
+        });
+    }
+
+    if (settingsForm) {
+        settingsForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            saveSettings();
+        });
+    }
+
+    if (cancelSettingsBtn) {
+        cancelSettingsBtn.addEventListener('click', closeSettingsModal);
+    }
+
+    if (closeSettingsBtn) {
+        closeSettingsBtn.addEventListener('click', closeSettingsModal);
+    }
+
+    if (imageModal) {
+        imageModal.addEventListener('click', function(e) {
+            if (e.target === imageModal) {
+                closeImageModal();
+            }
+        });
+    }
+
+    if (closeModalBtn) {
+        closeModalBtn.addEventListener('click', closeImageModal);
+    }
+
+    // 键盘事件
+    document.addEventListener('keydown', function(e) {
         if (e.key === 'Escape') {
             closeImageModal();
             closeSettingsModal();
         }
     });
-});
 
-// 加载图片列表
-function loadImages(forceRefresh = false) {
-    // 显示加载状态
-    showLoading();
-    hideEmptyState();
-    hideErrorState();
-    
-    // 构建API URL
-    let url = `/api/images?page=${state.currentPage}&per_page=${state.perPage}`;
-    if (forceRefresh) {
-        url += `&t=${new Date().getTime()}`;
+    // 初始加载图片
+    loadImages();
+
+    // 加载图片列表
+    function loadImages(forceRefresh = false) {
+        showLoading();
+        hideEmptyState();
+        hideErrorState();
+        
+        let url = `/api/images?page=${state.currentPage}&per_page=${state.perPage}`;
+        if (forceRefresh) {
+            url += `&t=${new Date().getTime()}`;
+        }
+        
+        fetch(url)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`HTTP错误: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                state.totalPages = data.total_pages;
+                state.totalImages = data.total_images;
+                state.imagesPerRow = data.images_per_row;
+                
+                updateImageGrid(data.images);
+                updatePagination();
+                updateGridColumns();
+                hideLoading();
+                
+                if (state.totalImages === 0) {
+                    showEmptyState();
+                }
+            })
+            .catch(error => {
+                console.error('加载图片失败:', error);
+                hideLoading();
+                showErrorState(error.message);
+            });
     }
-    
-    // 调用API
-    fetch(url)
-        .then(response => {
-            if (!response.ok) {
-                throw new Error('网络响应不正常');
-            }
-            return response.json();
+
+    // 更新图片网格
+    function updateImageGrid(images) {
+        const grid = document.getElementById('imageGrid');
+        if (!grid) return;
+        
+        grid.innerHTML = '';
+        
+        images.forEach(image => {
+            const imageUrl = `/images/${image.id}`;
+            const imageItem = document.createElement('div');
+            imageItem.className = 'image-item';
+            imageItem.innerHTML = `
+                <img src="${imageUrl}" alt="${image.filename}" class="image-thumbnail" loading="lazy">
+                <div class="image-info">
+                    <p class="image-name">${image.filename}</p>
+                    ${image.folder ? `<p class="image-path">${image.folder}</p>` : ''}
+                </div>
+            `;
+            
+            imageItem.addEventListener('click', () => openImageModal(image));
+            grid.appendChild(imageItem);
+        });
+    }
+
+    // 更新分页
+    function updatePagination() {
+        const pagination = document.getElementById('pagination');
+        const pageInfo = document.getElementById('pageInfo');
+        
+        if (!pagination || !pageInfo) return;
+        
+        pageInfo.textContent = `第 ${state.currentPage} 页，共 ${state.totalPages} 页 (${state.totalImages} 张图片)`;
+        prevPageBtn.disabled = state.currentPage <= 1;
+        nextPageBtn.disabled = state.currentPage >= state.totalPages;
+        
+        pagination.classList.toggle('hidden', state.totalPages <= 1);
+    }
+
+    // 更新网格列数
+    function updateGridColumns() {
+        const grid = document.getElementById('imageGrid');
+        if (grid) {
+            grid.style.setProperty('--columns', state.imagesPerRow);
+        }
+    }
+
+    // 打开图片模态框
+    function openImageModal(image) {
+        const modal = document.getElementById('imageModal');
+        const modalImage = document.getElementById('modalImage');
+        const modalTitle = document.getElementById('modalTitle');
+        const modalPath = document.getElementById('modalPath');
+        const modalSize = document.getElementById('modalSize');
+        const modalModified = document.getElementById('modalModified');
+        const modalExtension = document.getElementById('modalExtension');
+        const downloadLink = document.getElementById('downloadLink');
+        
+        if (!modal || !modalImage || !modalTitle) return;
+        
+        modalImage.src = `/images/${image.id}`;
+        modalTitle.textContent = image.filename;
+        modalPath.textContent = image.folder ? `${image.folder}/${image.filename}` : image.filename;
+        modalSize.textContent = image.size;
+        modalModified.textContent = image.modified;
+        modalExtension.textContent = image.extension.toUpperCase();
+        
+        if (downloadLink) {
+            downloadLink.href = `/images/${image.id}`;
+            downloadLink.download = image.filename;
+        }
+        
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden';
+    }
+
+    // 关闭图片模态框
+    function closeImageModal() {
+        const modal = document.getElementById('imageModal');
+        if (modal) {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    }
+
+    // 打开设置模态框
+    function openSettingsModal() {
+        fetch('/api/settings')
+            .then(response => response.json())
+            .then(settings => {
+                const imageFolder = document.getElementById('imageFolder');
+                const scanSubfolders = document.getElementById('scanSubfolders');
+                const maxDepth = document.getElementById('maxDepth');
+                const imagesPerRow = document.getElementById('imagesPerRow');
+                const cacheDuration = document.getElementById('cacheDuration');
+                const settingsModal = document.getElementById('settingsModal');
+                
+                if (imageFolder) imageFolder.value = settings.image_folder || '';
+                if (scanSubfolders) scanSubfolders.checked = settings.scan_subfolders === 'true';
+                if (maxDepth) maxDepth.value = settings.max_depth || 0;
+                if (imagesPerRow) imagesPerRow.value = settings.images_per_row || 5;
+                if (cacheDuration) cacheDuration.value = settings.cache_duration || 600;
+                if (settingsModal) {
+                    settingsModal.classList.remove('hidden');
+                    document.body.style.overflow = 'hidden';
+                }
+            })
+            .catch(error => {
+                console.error('加载设置失败:', error);
+                alert('无法加载设置，请稍后重试');
+            });
+    }
+
+    // 关闭设置模态框
+    function closeSettingsModal() {
+        const modal = document.getElementById('settingsModal');
+        if (modal) {
+            modal.classList.add('hidden');
+            document.body.style.overflow = '';
+        }
+    }
+
+    // 保存设置
+    function saveSettings() {
+        const settings = {
+            image_folder: document.getElementById('imageFolder').value,
+            scan_subfolders: document.getElementById('scanSubfolders').checked ? 'true' : 'false',
+            max_depth: document.getElementById('maxDepth').value,
+            images_per_row: document.getElementById('imagesPerRow').value,
+            cache_duration: document.getElementById('cacheDuration').value
+        };
+        
+        fetch('/api/settings', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(settings)
         })
+        .then(response => response.json())
         .then(data => {
-            // 更新状态
-            state.totalPages = data.total_pages;
-            state.totalImages = data.total_images;
-            state.imagesPerRow = data.images_per_row;
-            
-            // 更新UI
-            updateImageGrid(data.images);
-            updatePagination();
-            updateGridColumns();
-            
-            // 隐藏加载状态
-            hideLoading();
-            
-            // 如果没有图片，显示空状态
-            if (state.totalImages === 0) {
-                showEmptyState();
+            if (data.status === 'success') {
+                closeSettingsModal();
+                state.currentPage = 1;
+                loadImages(true);
+                alert('设置已保存');
+            } else {
+                alert('保存失败: ' + (data.message || '未知错误'));
             }
         })
         .catch(error => {
-            console.error('加载图片失败:', error);
-            hideLoading();
-            showErrorState(error.message);
+            console.error('保存设置失败:', error);
+            alert('保存设置时发生错误');
         });
-}
-
-// 更新图片网格
-function updateImageGrid(images) {
-    const grid = document.getElementById('imageGrid');
-    grid.innerHTML = '';
-    
-    images.forEach(image => {
-        const imageUrl = `/images/${image.id}`;
-        
-        // 创建图片项
-        const imageItem = document.createElement('div');
-        imageItem.className = 'image-item bg-white rounded-lg shadow overflow-hidden';
-        imageItem.innerHTML = `
-            <img src="${imageUrl}" alt="${image.filename}" class="image-thumbnail" loading="lazy">
-            <div class="p-2">
-                <p class="text-sm font-medium truncate" title="${image.filename}">${image.filename}</p>
-                ${image.folder ? `<p class="text-xs text-gray-500 truncate" title="${image.folder}">${image.folder}</p>` : ''}
-            </div>
-        `;
-        
-        // 点击查看大图
-        imageItem.addEventListener('click', () => {
-            openImageModal(image);
-        });
-        
-        grid.appendChild(imageItem);
-    });
-}
-
-// 更新分页控件
-function updatePagination() {
-    const pagination = document.getElementById('pagination');
-    const pageInfo = document.getElementById('pageInfo');
-    const prevBtn = document.getElementById('prevPage');
-    const nextBtn = document.getElementById('nextPage');
-    
-    // 更新分页信息
-    pageInfo.textContent = `第 ${state.currentPage} 页，共 ${state.totalPages} 页 (${state.totalImages} 张图片)`;
-    
-    // 启用/禁用分页按钮
-    prevBtn.disabled = state.currentPage <= 1;
-    nextBtn.disabled = state.currentPage >= state.totalPages;
-    
-    // 显示或隐藏分页控件
-    if (state.totalPages > 1) {
-        pagination.classList.remove('hidden');
-    } else {
-        pagination.classList.add('hidden');
     }
-}
 
-// 更新网格列数
-function updateGridColumns() {
-    const grid = document.getElementById('imageGrid');
-    grid.style.setProperty('--columns', state.imagesPerRow);
-}
+    // 显示加载状态
+    function showLoading() {
+        const loading = document.getElementById('loading');
+        if (loading) loading.classList.remove('hidden');
+    }
 
-// 打开图片查看模态框
-function openImageModal(image) {
-    const modal = document.getElementById('imageModal');
-    const modalImage = document.getElementById('modalImage');
-    const modalTitle = document.getElementById('modalTitle');
-    const modalPath = document.getElementById('modalPath');
-    const modalSize = document.getElementById('modalSize');
-    const modalModified = document.getElementById('modalModified');
-    const modalExtension = document.getElementById('modalExtension');
-    const downloadLink = document.getElementById('downloadLink');
-    
-    // 设置模态框内容
-    modalImage.src = `/images/${image.id}`;
-    modalTitle.textContent = image.filename;
-    modalPath.textContent = image.folder ? `${image.folder}/${image.filename}` : image.filename;
-    modalSize.textContent = image.size;
-    modalModified.textContent = image.modified;
-    modalExtension.textContent = image.extension.toUpperCase();
-    downloadLink.href = `/images/${image.id}`;
-    downloadLink.download = image.filename;
-    
-    // 显示模态框
-    modal.classList.remove('hidden');
-    document.body.style.overflow = 'hidden'; // 防止背景滚动
-}
+    // 隐藏加载状态
+    function hideLoading() {
+        const loading = document.getElementById('loading');
+        if (loading) loading.classList.add('hidden');
+    }
 
-// 关闭图片查看模态框
-function closeImageModal() {
-    const modal = document.getElementById('imageModal');
-    modal.classList.add('hidden');
-    document.body.style.overflow = ''; // 恢复背景滚动
-}
+    // 显示空状态
+    function showEmptyState() {
+        const empty = document.getElementById('emptyState');
+        if (empty) empty.classList.remove('hidden');
+    }
 
-// 打开设置模态框
-function openSettingsModal() {
-    // 获取当前设置
-    fetch('/api/settings')
-        .then(response => response.json())
-        .then(settings => {
-            // 填充表单
-            document.getElementById('imageFolder').value = settings.image_folder || '';
-            document.getElementById('scanSubfolders').checked = settings.scan_subfolders === 'true';
-            document.getElementById('maxDepth').value = settings.max_depth || 0;
-            document.getElementById('imagesPerRow').value = settings.images_per_row || 5;
-            document.getElementById('cacheDuration').value = settings.cache_duration || 600;
-            
-            // 显示模态框
-            document.getElementById('settingsModal').classList.remove('hidden');
-            document.body.style.overflow = 'hidden';
-        });
-}
+    // 隐藏空状态
+    function hideEmptyState() {
+        const empty = document.getElementById('emptyState');
+        if (empty) empty.classList.add('hidden');
+    }
 
-// 关闭设置模态框
-function closeSettingsModal() {
-    document.getElementById('settingsModal').classList.add('hidden');
-    document.body.style.overflow = '';
-}
-
-// 保存设置
-function saveSettings(e) {
-    e.preventDefault();
-    
-    // 收集表单数据
-    const settings = {
-        image_folder: document.getElementById('imageFolder').value,
-        scan_subfolders: document.getElementById('scanSubfolders').checked ? 'true' : 'false',
-        max_depth: document.getElementById('maxDepth').value,
-        images_per_row: document.getElementById('imagesPerRow').value,
-        cache_duration: document.getElementById('cacheDuration').value
-    };
-    
-    // 保存设置
-    fetch('/api/settings', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(settings)
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.status === 'success') {
-            // 关闭模态框
-            closeSettingsModal();
-            
-            // 重新加载图片
-            state.currentPage = 1;
-            loadImages(true);
-            
-            // 显示成功消息
-            alert('设置已保存');
-        } else {
-            alert('保存失败: ' + (data.message || '未知错误'));
+    // 显示错误状态
+    function showErrorState(message) {
+        const error = document.getElementById('errorState');
+        const errorMsg = document.getElementById('errorMessage');
+        if (error && errorMsg) {
+            errorMsg.textContent = message || '加载失败';
+            error.classList.remove('hidden');
         }
-    })
-    .catch(error => {
-        console.error('保存设置失败:', error);
-        alert('保存设置时发生错误');
-    });
-}
+    }
 
-// 显示加载状态
-function showLoading() {
-    document.getElementById('loading').classList.remove('hidden');
-}
-
-// 隐藏加载状态
-function hideLoading() {
-    document.getElementById('loading').classList.add('hidden');
-}
-
-// 显示空状态
-function showEmptyState() {
-    document.getElementById('emptyState').classList.remove('hidden');
-}
-
-// 隐藏空状态
-function hideEmptyState() {
-    document.getElementById('emptyState').classList.add('hidden');
-}
-
-// 显示错误状态
-function showErrorState(message) {
-    const errorState = document.getElementById('errorState');
-    const errorMessage = document.getElementById('errorMessage');
-    
-    errorMessage.textContent = message || '加载图片时发生错误';
-    errorState.classList.remove('hidden');
-}
-
-// 隐藏错误状态
-function hideErrorState() {
-    document.getElementById('errorState').classList.add('hidden');
-}
+    // 隐藏错误状态
+    function hideErrorState() {
+        const error = document.getElementById('errorState');
+        if (error) error.classList.add('hidden');
+    }
+});
     
