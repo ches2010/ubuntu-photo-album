@@ -1,6 +1,6 @@
 /**
- * 相册展示功能模块
- * 负责图片加载、展示、分页和查看等功能
+ * 相册核心功能模块
+ * 负责图片加载、展示和相关交互
  */
 export default class Gallery {
     constructor() {
@@ -13,17 +13,22 @@ export default class Gallery {
             imagesPerRow: 5,
             isLoading: false
         };
-
+        
         // 缓存DOM元素
         this.elements = this.initElements();
+        
+        // 绑定事件处理函数的上下文
+        this.handleRefresh = this.handleRefresh.bind(this);
+        this.changePage = this.changePage.bind(this);
+        this.handlePerPageChange = this.handlePerPageChange.bind(this);
+        this.closeImageModal = this.closeImageModal.bind(this);
+        this.handleKeyPress = this.handleKeyPress.bind(this);
         
         // 初始化事件监听
         this.initEventListeners();
     }
-
-    /**
-     * 初始化DOM元素引用
-     */
+    
+    // 初始化DOM元素引用
     initElements() {
         return {
             refreshBtn: document.getElementById('refreshBtn'),
@@ -48,30 +53,26 @@ export default class Gallery {
             downloadLink: document.getElementById('downloadLink')
         };
     }
-
-    /**
-     * 初始化事件监听
-     */
+    
+    // 初始化事件监听
     initEventListeners() {
-        // 刷新按钮事件
+        // 确保元素存在再绑定事件，避免错误
         if (this.elements.refreshBtn) {
-            this.elements.refreshBtn.addEventListener('click', () => this.handleRefresh());
+            this.elements.refreshBtn.addEventListener('click', this.handleRefresh);
         }
-
-        // 分页按钮事件
+        
         if (this.elements.prevPageBtn) {
             this.elements.prevPageBtn.addEventListener('click', () => this.changePage(-1));
         }
+        
         if (this.elements.nextPageBtn) {
             this.elements.nextPageBtn.addEventListener('click', () => this.changePage(1));
         }
-
-        // 每页数量选择事件
+        
         if (this.elements.perPageSelect) {
-            this.elements.perPageSelect.addEventListener('change', (e) => this.handlePerPageChange(e));
+            this.elements.perPageSelect.addEventListener('change', this.handlePerPageChange);
         }
-
-        // 图片模态框事件
+        
         if (this.elements.imageModal) {
             this.elements.imageModal.addEventListener('click', (e) => {
                 if (e.target === this.elements.imageModal) {
@@ -79,38 +80,41 @@ export default class Gallery {
                 }
             });
         }
+        
         if (this.elements.closeModalBtn) {
-            this.elements.closeModalBtn.addEventListener('click', () => this.closeImageModal());
+            this.elements.closeModalBtn.addEventListener('click', this.closeImageModal);
         }
-
-        // 键盘事件
-        document.addEventListener('keydown', (e) => this.handleKeyPress(e));
+        
+        // 键盘事件监听
+        document.addEventListener('keydown', this.handleKeyPress);
     }
-
-    /**
-     * 处理刷新操作
-     */
+    
+    // 处理刷新
     handleRefresh() {
         if (this.state.isLoading) return;
         
         const btn = this.elements.refreshBtn;
-        btn.disabled = true;
-        btn.innerHTML = '🔄 刷新中...';
+        if (btn) {
+            btn.disabled = true;
+            btn.innerHTML = '🔄 刷新中...';
+        }
         
         this.loadImages(true)
             .then(() => {
-                btn.disabled = false;
-                btn.innerHTML = '🔄 刷新';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '🔄 刷新';
+                }
             })
             .catch(() => {
-                btn.disabled = false;
-                btn.innerHTML = '🔄 刷新';
+                if (btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '🔄 刷新';
+                }
             });
     }
-
-    /**
-     * 处理分页变化
-     */
+    
+    // 处理分页变化
     changePage(delta) {
         const newPage = this.state.currentPage + delta;
         if (newPage >= 1 && newPage <= this.state.totalPages) {
@@ -118,45 +122,15 @@ export default class Gallery {
             this.loadImages();
         }
     }
-
-    /**
-     * 处理每页数量变化
-     */
+    
+    // 处理每页数量变化
     handlePerPageChange(e) {
         this.state.perPage = parseInt(e.target.value);
         this.state.currentPage = 1;
         this.loadImages();
     }
-
-    /**
-     * 处理键盘事件
-     */
-    handleKeyPress(e) {
-        // ESC键关闭模态框
-        if (e.key === 'Escape') {
-            this.closeImageModal();
-        }
-        
-        // 左右箭头键翻页（模态框未打开时）
-        if (!this.isModalOpen()) {
-            if (e.key === 'ArrowLeft') {
-                this.changePage(-1);
-            } else if (e.key === 'ArrowRight') {
-                this.changePage(1);
-            }
-        }
-    }
-
-    /**
-     * 检查模态框是否打开
-     */
-    isModalOpen() {
-        return this.elements.imageModal && !this.elements.imageModal.classList.contains('hidden');
-    }
-
-    /**
-     * 加载图片列表
-     */
+    
+    // 加载图片列表
     loadImages(forceRefresh = false) {
         return new Promise((resolve, reject) => {
             if (this.state.isLoading) {
@@ -211,10 +185,8 @@ export default class Gallery {
                 });
         });
     }
-
-    /**
-     * 更新图片网格
-     */
+    
+    // 更新图片网格
     updateImageGrid(images) {
         if (!this.elements.imageGrid) return;
         
@@ -239,136 +211,143 @@ export default class Gallery {
             this.elements.imageGrid.appendChild(imageItem);
         });
     }
-
-    /**
-     * 更新分页控件
-     */
+    
+    // 更新分页控件
     updatePagination() {
         if (!this.elements.pagination || !this.elements.pageInfo) return;
         
         this.elements.pageInfo.textContent = 
             `第 ${this.state.currentPage} 页，共 ${this.state.totalPages} 页 (${this.state.totalImages} 张图片)`;
         
-        this.elements.prevPageBtn.disabled = this.state.currentPage <= 1;
-        this.elements.nextPageBtn.disabled = this.state.currentPage >= this.state.totalPages;
+        if (this.elements.prevPageBtn) {
+            this.elements.prevPageBtn.disabled = this.state.currentPage <= 1;
+        }
+        
+        if (this.elements.nextPageBtn) {
+            this.elements.nextPageBtn.disabled = this.state.currentPage >= this.state.totalPages;
+        }
         
         this.elements.pagination.classList.toggle('hidden', this.state.totalPages <= 1);
     }
-
-    /**
-     * 更新网格列数
-     */
+    
+    // 更新网格列数
     updateGridColumns() {
         if (this.elements.imageGrid) {
             this.elements.imageGrid.style.setProperty('--columns', this.state.imagesPerRow);
         }
     }
-
-    /**
-     * 打开图片模态框
-     */
+    
+    // 打开图片模态框
     openImageModal(image) {
-        const modal = this.elements.imageModal;
-        if (!modal) return;
-        
-        if (!this.elements.modalImage || !this.elements.modalTitle) return;
+        if (!this.elements.imageModal || !this.elements.modalImage || !this.elements.modalTitle) return;
         
         this.elements.modalImage.src = `/images/${image.id}`;
         this.elements.modalTitle.textContent = this.escapeHtml(image.filename);
-        this.elements.modalPath.textContent = image.folder 
-            ? `${this.escapeHtml(image.folder)}/${this.escapeHtml(image.filename)}` 
-            : this.escapeHtml(image.filename);
-        this.elements.modalSize.textContent = image.size;
-        this.elements.modalModified.textContent = image.modified;
-        this.elements.modalExtension.textContent = image.extension.toUpperCase();
+        
+        if (this.elements.modalPath) {
+            this.elements.modalPath.textContent = image.folder 
+                ? `${this.escapeHtml(image.folder)}/${this.escapeHtml(image.filename)}` 
+                : this.escapeHtml(image.filename);
+        }
+        
+        if (this.elements.modalSize) {
+            this.elements.modalSize.textContent = image.size;
+        }
+        
+        if (this.elements.modalModified) {
+            this.elements.modalModified.textContent = image.modified;
+        }
+        
+        if (this.elements.modalExtension) {
+            this.elements.modalExtension.textContent = image.extension.toUpperCase();
+        }
         
         if (this.elements.downloadLink) {
             this.elements.downloadLink.href = `/images/${image.id}`;
             this.elements.downloadLink.download = image.filename;
         }
         
-        modal.classList.remove('hidden');
+        this.elements.imageModal.classList.remove('hidden');
         document.body.style.overflow = 'hidden';
     }
-
-    /**
-     * 关闭图片模态框
-     */
+    
+    // 关闭图片模态框
     closeImageModal() {
         if (this.elements.imageModal) {
             this.elements.imageModal.classList.add('hidden');
             document.body.style.overflow = '';
         }
     }
-
-    /**
-     * 显示加载状态
-     */
+    
+    // 处理键盘事件
+    handleKeyPress(e) {
+        // ESC键关闭模态框
+        if (e.key === 'Escape') {
+            this.closeImageModal();
+        }
+        
+        // 左右箭头键翻页（当模态框关闭时）
+        if (this.elements.imageModal && this.elements.imageModal.classList.contains('hidden')) {
+            if (e.key === 'ArrowLeft') {
+                this.changePage(-1);
+            } else if (e.key === 'ArrowRight') {
+                this.changePage(1);
+            }
+        }
+    }
+    
+    // 显示加载状态
     showLoading() {
         this.state.isLoading = true;
         if (this.elements.loadingIndicator) {
             this.elements.loadingIndicator.classList.remove('hidden');
         }
     }
-
-    /**
-     * 隐藏加载状态
-     */
+    
+    // 隐藏加载状态
     hideLoading() {
         this.state.isLoading = false;
         if (this.elements.loadingIndicator) {
             this.elements.loadingIndicator.classList.add('hidden');
         }
     }
-
-    /**
-     * 显示空状态
-     */
+    
+    // 显示空状态
     showEmptyState() {
         if (this.elements.emptyState) {
             this.elements.emptyState.classList.remove('hidden');
         }
     }
-
-    /**
-     * 隐藏空状态
-     */
+    
+    // 隐藏空状态
     hideEmptyState() {
         if (this.elements.emptyState) {
             this.elements.emptyState.classList.add('hidden');
         }
     }
-
-    /**
-     * 显示错误状态
-     */
+    
+    // 显示错误状态
     showErrorState(message) {
         if (this.elements.errorState && this.elements.errorMessage) {
             this.elements.errorMessage.textContent = message;
             this.elements.errorState.classList.remove('hidden');
         }
     }
-
-    /**
-     * 隐藏错误状态
-     */
+    
+    // 隐藏错误状态
     hideErrorState() {
         if (this.elements.errorState) {
             this.elements.errorState.classList.add('hidden');
         }
     }
-
-    /**
-     * 工具函数: 截断文本
-     */
+    
+    // 工具函数: 截断文本
     truncateText(text, maxLength) {
         if (text.length <= maxLength) return text;
         return text.substring(0, maxLength) + '...';
     }
-
-    /**
-     * 工具函数: 防XSS
-     */
+    
+    // 工具函数: 防XSS
     escapeHtml(unsafe) {
         if (!unsafe) return '';
         return unsafe.toString()
@@ -379,3 +358,4 @@ export default class Gallery {
             .replace(/'/g, "&#039;");
     }
 }
+    
