@@ -96,7 +96,7 @@ function init() {
             // 生成并输出缩略图
             generateThumbnail($imagePath);
             exit;
-
+            break;
         case 'getImages':
             handleGetImages();
             break;
