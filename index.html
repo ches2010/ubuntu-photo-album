@@ -3,98 +3,112 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ubuntu 相册</title>
-    <link rel="stylesheet" href="css/styles.css">
+    <title>服务器相册</title>
+    <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <header>
-        <h1>📷 Ubuntu 相册</h1>
+    <!-- 顶部导航 -->
+    <header class="header">
+        <h1>服务器相册</h1>
         <div class="controls">
             <button id="refreshBtn" class="btn">🔄 刷新</button>
             <button id="settingsBtn" class="btn">⚙️ 设置</button>
         </div>
     </header>
 
-    <main>
-        <div id="loading" class="loading hidden">
+    <!-- 图片网格 -->
+    <main class="gallery-container">
+        <div id="imageGrid" class="image-grid"></div>
+        
+        <!-- 加载指示器 -->
+        <div id="loadingIndicator" class="loading-indicator hidden">
             <div class="spinner"></div>
             <p>加载中...</p>
         </div>
-
+        
+        <!-- 空状态 -->
         <div id="emptyState" class="empty-state hidden">
-            <p>未找到图片，请检查图片目录设置</p>
+            <p>未找到图片，请检查设置中的图片目录</p>
         </div>
-
+        
+        <!-- 错误状态 -->
         <div id="errorState" class="error-state hidden">
-            <p>❌ 加载失败</p>
-            <p id="errorMessage"></p>
-        </div>
-
-        <div id="imageGrid" class="image-grid"></div>
-
-        <div id="pagination" class="pagination hidden">
-            <button id="prevPage" class="btn">上一页</button>
-            <span id="pageInfo"></span>
-            <select id="perPageSelect" class="select">
-                <option value="40">40 张/页</option>
-                <option value="80">80 张/页</option>
-            </select>
-            <button id="nextPage" class="btn">下一页</button>
+            <p id="errorMessage">加载失败，请重试</p>
         </div>
     </main>
 
+    <!-- 分页控件 -->
+    <div id="pagination" class="pagination hidden">
+        <button id="prevPage" class="btn pagination-btn">上一页</button>
+        <span id="pageInfo" class="page-info"></span>
+        <button id="nextPage" class="btn pagination-btn">下一页</button>
+    </div>
+
+    <!-- 图片查看模态框 -->
     <div id="imageModal" class="modal hidden">
         <div class="modal-content">
-            <button id="closeModal" class="modal-close">&times;</button>
+            <button id="closeModal" class="close-btn">&times;</button>
             <img id="modalImage" class="modal-image" src="" alt="图片预览">
-            <div class="modal-info">
+            <div class="modal-details">
                 <h3 id="modalTitle"></h3>
                 <p><strong>路径:</strong> <span id="modalPath"></span></p>
                 <p><strong>大小:</strong> <span id="modalSize"></span></p>
                 <p><strong>修改时间:</strong> <span id="modalModified"></span></p>
-                <p><strong>格式:</strong> <span id="modalExtension"></span></p>
-                <a id="downloadLink" class="btn" download>下载图片</a>
+                <a id="downloadLink" class="btn download-btn" download>下载图片</a>
             </div>
         </div>
     </div>
 
+    <!-- 设置模态框 -->
     <div id="settingsModal" class="modal hidden">
-        <div class="modal-content">
-            <button id="closeSettings" class="modal-close">&times;</button>
+        <div class="modal-content settings-modal">
+            <button id="closeSettings" class="close-btn">&times;</button>
             <h2>设置</h2>
             <form id="settingsForm">
                 <div class="form-group">
                     <label for="imageFolder">图片文件夹路径:</label>
                     <input type="text" id="imageFolder" required>
                 </div>
+                
                 <div class="form-group">
                     <label>
                         <input type="checkbox" id="scanSubfolders"> 扫描子文件夹
                     </label>
                 </div>
+                
                 <div class="form-group">
-                    <label for="maxDepth">最大扫描深度 (0为无限制):</label>
+                    <label for="maxDepth">最大扫描深度 (0表示无限制):</label>
                     <input type="number" id="maxDepth" min="0" value="0">
                 </div>
+                
                 <div class="form-group">
                     <label for="imagesPerRow">每行显示图片数量:</label>
                     <input type="number" id="imagesPerRow" min="1" max="10" value="5">
                 </div>
+                
                 <div class="form-group">
-                    <label for="cacheDuration">缓存有效期 (秒):</label>
+                    <label for="cacheDuration">缓存时间 (秒):</label>
                     <input type="number" id="cacheDuration" min="60" value="600">
                 </div>
+                
                 <div class="form-actions">
-                    <button type="button" id="cancelSettings" class="btn secondary">取消</button>
-                    <button type="submit" class="btn">保存设置</button>
+                    <button type="button" id="cancelSettings" class="btn cancel-btn">取消</button>
+                    <button type="submit" class="btn save-btn">保存设置</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- 修正JS文件路径引用 -->
-    <script src="web/js/app.js"></script>
-    <script src="web/js/gallery.js"></script>
-    <script src="web/js/settings.js"></script>
+    <!-- 确保脚本按正确顺序加载 -->
+    <script type="module">
+        // 先加载基础库
+        import './js/gallery.js'
+            .then(() => import('./js/settings.js'))
+            .then(() => import('./js/app.js'))
+            .catch(error => {
+                console.error('脚本加载失败:', error);
+                alert('应用加载失败，请刷新页面重试');
+            });
+    </script>
 </body>
 </html>
