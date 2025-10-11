@@ -7,63 +7,53 @@ export default class Settings {
         // 保存相册实例引用
         this.gallery = gallery;
         
-        // 缓存DOM元素
         this.elements = this.initElements();
         
-        // 绑定事件处理函数的上下文
+        // 绑定事件处理函数
         this.openSettingsModal = this.openSettingsModal.bind(this);
         this.closeSettingsModal = this.closeSettingsModal.bind(this);
         this.handleSettingsSubmit = this.handleSettingsSubmit.bind(this);
         
-        // 初始化事件监听
         this.initEventListeners();
     }
-    
-    // 初始化DOM元素引用
+
     initElements() {
         return {
             settingsBtn: document.getElementById('settingsBtn'),
             settingsModal: document.getElementById('settingsModal'),
             settingsForm: document.getElementById('settingsForm'),
-            cancelSettingsBtn: document.getElementById('cancelSettings'),
-            closeSettingsBtn: document.getElementById('closeSettings'),
+            closeSettingsBtn: document.getElementById('closeSettingsBtn'),
+            cancelSettingsBtn: document.getElementById('cancelSettingsBtn'),
             imageFolder: document.getElementById('imageFolder'),
             scanSubfolders: document.getElementById('scanSubfolders'),
             maxDepth: document.getElementById('maxDepth'),
             imagesPerRow: document.getElementById('imagesPerRow'),
-            cacheDuration: document.getElementById('cacheDuration'),
-            loadingIndicator: document.getElementById('loadingIndicator')
+            cacheDuration: document.getElementById('cacheDuration')
         };
     }
-    
-    // 初始化事件监听
+
     initEventListeners() {
-        // 确保元素存在再绑定事件
+        // 设置按钮点击事件
         if (this.elements.settingsBtn) {
             this.elements.settingsBtn.addEventListener('click', this.openSettingsModal);
         } else {
-            console.warn('未找到settingsBtn元素');
+            console.warn('settingsBtn元素不存在');
         }
-        
-        if (this.elements.settingsForm) {
-            this.elements.settingsForm.addEventListener('submit', this.handleSettingsSubmit);
-        } else {
-            console.warn('未找到settingsForm元素');
-        }
-        
-        if (this.elements.cancelSettingsBtn) {
-            this.elements.cancelSettingsBtn.addEventListener('click', this.closeSettingsModal);
-        } else {
-            console.warn('未找到cancelSettingsBtn元素');
-        }
-        
+
+        // 关闭设置按钮事件
         if (this.elements.closeSettingsBtn) {
             this.elements.closeSettingsBtn.addEventListener('click', this.closeSettingsModal);
-        } else {
-            console.warn('未找到closeSettingsBtn元素');
         }
-        
-        // 点击模态框外部关闭
+        if (this.elements.cancelSettingsBtn) {
+            this.elements.cancelSettingsBtn.addEventListener('click', this.closeSettingsModal);
+        }
+
+        // 设置表单提交事件
+        if (this.elements.settingsForm) {
+            this.elements.settingsForm.addEventListener('submit', this.handleSettingsSubmit);
+        }
+
+        // 点击模态框背景关闭
         if (this.elements.settingsModal) {
             this.elements.settingsModal.addEventListener('click', (e) => {
                 if (e.target === this.elements.settingsModal) {
@@ -71,8 +61,8 @@ export default class Settings {
                 }
             });
         }
-        
-        // 键盘事件 - ESC关闭设置模态框
+
+        // ESC键关闭设置模态框
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && this.elements.settingsModal && 
                 !this.elements.settingsModal.classList.contains('hidden')) {
@@ -80,20 +70,17 @@ export default class Settings {
             }
         });
     }
-    
+
     // 打开设置模态框
     openSettingsModal() {
-        if (!this.elements.settingsModal) return;
-        
         // 显示加载状态
-        if (this.elements.loadingIndicator) {
-            this.elements.loadingIndicator.classList.remove('hidden');
-        }
+        this.gallery.showLoading();
         
-        // 加载当前配置
         fetch('/api/config')
             .then(response => {
-                if (!response.ok) throw new Error('加载设置失败');
+                if (!response.ok) {
+                    throw new Error(`加载设置失败: ${response.status}`);
+                }
                 return response.json();
             })
             .then(settings => {
@@ -101,39 +88,35 @@ export default class Settings {
                 if (this.elements.imageFolder) {
                     this.elements.imageFolder.value = settings.image_folder || '';
                 }
-                
                 if (this.elements.scanSubfolders) {
                     this.elements.scanSubfolders.checked = settings.scan_subfolders === 'true';
                 }
-                
                 if (this.elements.maxDepth) {
                     this.elements.maxDepth.value = settings.max_depth || 0;
                 }
-                
                 if (this.elements.imagesPerRow) {
                     this.elements.imagesPerRow.value = settings.images_per_row || 5;
                 }
-                
                 if (this.elements.cacheDuration) {
                     this.elements.cacheDuration.value = settings.cache_duration || 600;
                 }
                 
                 // 显示模态框
-                this.elements.settingsModal.classList.remove('hidden');
-                document.body.style.overflow = 'hidden';
+                if (this.elements.settingsModal) {
+                    this.elements.settingsModal.classList.remove('hidden');
+                    document.body.style.overflow = 'hidden';
+                }
             })
             .catch(error => {
                 console.error('加载设置失败:', error);
-                alert('加载设置失败: ' + error.message);
+                this.gallery.showErrorState('加载设置失败: ' + error.message);
             })
             .finally(() => {
                 // 隐藏加载状态
-                if (this.elements.loadingIndicator) {
-                    this.elements.loadingIndicator.classList.add('hidden');
-                }
+                this.gallery.hideLoading();
             });
     }
-    
+
     // 关闭设置模态框
     closeSettingsModal() {
         if (this.elements.settingsModal) {
@@ -141,13 +124,13 @@ export default class Settings {
             document.body.style.overflow = '';
         }
     }
-    
+
     // 处理设置提交
     handleSettingsSubmit(e) {
         e.preventDefault();
-        if (!this.gallery || this.gallery.state.isLoading) return;
+        if (this.gallery.state.isLoading) return;
 
-        // 获取表单数据
+        // 收集表单数据
         const formData = {
             image_folder: this.elements.imageFolder ? this.elements.imageFolder.value : '',
             scan_subfolders: this.elements.scanSubfolders ? this.elements.scanSubfolders.checked : false,
@@ -157,35 +140,40 @@ export default class Settings {
         };
 
         // 显示加载状态
-        if (this.elements.loadingIndicator) {
-            this.elements.loadingIndicator.classList.remove('hidden');
-        }
+        this.gallery.showLoading();
         
-        // 保存设置
         fetch('/api/config', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(formData)
         })
         .then(response => {
-            if (!response.ok) throw new Error('保存设置失败');
+            if (!response.ok) {
+                throw new Error(`保存设置失败: ${response.status}`);
+            }
             return response.json();
         })
-        .then(() => {
-            this.closeSettingsModal();
-            // 重置相册到第一页并强制刷新
-            this.gallery.state.currentPage = 1;
-            return this.gallery.loadImages(true);
+        .then(data => {
+            if (data.status === 'success') {
+                // 关闭模态框
+                this.closeSettingsModal();
+                
+                // 重置到第一页并刷新图片
+                this.gallery.state.currentPage = 1;
+                return this.gallery.loadImages(true);
+            } else {
+                throw new Error('保存设置失败');
+            }
         })
         .catch(error => {
             console.error('保存设置失败:', error);
-            alert('保存设置失败: ' + error.message);
+            this.gallery.showErrorState('保存设置失败: ' + error.message);
         })
         .finally(() => {
             // 隐藏加载状态
-            if (this.elements.loadingIndicator) {
-                this.elements.loadingIndicator.classList.add('hidden');
-            }
+            this.gallery.hideLoading();
         });
     }
 }
