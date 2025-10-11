@@ -36,9 +36,14 @@ if (json_last_error() !== JSON_ERROR_NONE) {
 }
 
 // 处理API请求
-handleApiRequest($_SERVER['REQUEST_URI'], $config);
+$requestHandled = handleApiRequest($_SERVER['REQUEST_URI'], $config);
 
-// 处理API请求的函数
+// 如果API请求未被处理，输出HTML页面
+if (!$requestHandled) {
+    include 'index.html';
+}
+
+// 处理API请求的函数 - 返回是否处理了请求
 function handleApiRequest($requestUri, $config) {
     // 处理配置API
     if ($requestUri === '/api/config') {
@@ -52,12 +57,17 @@ function handleApiRequest($requestUri, $config) {
                 'cache_duration' => $config['settings']['cache_duration'],
                 'port' => $config['settings']['port']
             ]);
-            exit;
+            return true;
         } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $data = json_decode(file_get_contents('php://input'), true);
             if ($data) {
                 $configFile = PROJECT_ROOT . '/config.json';
                 $currentConfig = json_decode(file_get_contents($configFile), true);
+                
+                // 确保配置结构正确
+                if (!isset($currentConfig['settings'])) {
+                    $currentConfig['settings'] = [];
+                }
                 
                 $currentConfig['settings'] = array_merge(
                     $currentConfig['settings'],
@@ -71,8 +81,14 @@ function handleApiRequest($requestUri, $config) {
                 
                 header('Content-Type: application/json');
                 echo json_encode(['status' => 'success']);
-                exit;
+                return true;
             }
+            
+            // 无效数据处理
+            http_response_code(400);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => '无效的配置数据']);
+            return true;
         }
     }
     
@@ -86,45 +102,72 @@ function handleApiRequest($requestUri, $config) {
         $page = max(1, $page);
         $perPage = max(10, min(100, $perPage)); // 限制每页数量范围
         
-        $images = getImages($config, $forceRefresh);
-        $totalImages = count($images);
-        $totalPages = max(1, ceil($totalImages / $perPage));
-        $offset = ($page - 1) * $perPage;
-        $paginatedImages = array_slice($images, $offset, $perPage);
-        
-        header('Content-Type: application/json');
-        echo json_encode([
-            'images' => $paginatedImages,
-            'total_images' => $totalImages,
-            'total_pages' => $totalPages,
-            'current_page' => $page,
-            'images_per_row' => $config['settings']['images_per_row']
-        ]);
-        exit;
+        try {
+            $images = getImages($config, $forceRefresh);
+            $totalImages = count($images);
+            $totalPages = max(1, ceil($totalImages / $perPage));
+            $offset = ($page - 1) * $perPage;
+            $paginatedImages = array_slice($images, $offset, $perPage);
+            
+            header('Content-Type: application/json');
+            echo json_encode([
+                'images' => $paginatedImages,
+                'total_images' => $totalImages,
+                'total_pages' => $totalPages,
+                'current_page' => $page,
+                'images_per_row' => $config['settings']['images_per_row']
+            ]);
+        } catch (Exception $e) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'error' => '获取图片失败',
+                'message' => $e->getMessage()
+            ]);
+        }
+        return true;
     }
     
     // 处理图片访问
     if (preg_match('/^\/images\/(\d+)$/', $requestUri, $matches)) {
         $imageId = (int)$matches[1];
-        $images = getImages($config);
-        
-        if (isset($images[$imageId])) {
-            $imagePath = $images[$imageId]['path'];
-            if (file_exists($imagePath)) {
-                $mimeType = getMimeType($imagePath);
-                header("Content-Type: $mimeType");
-                header("Cache-Control: public, max-age=86400"); // 缓存1天
-                readfile($imagePath);
-                exit;
+        try {
+            $images = getImages($config);
+            
+            if (isset($images[$imageId])) {
+                $imagePath = $images[$imageId]['path'];
+                if (file_exists($imagePath) && is_readable($imagePath)) {
+                    $mimeType = getMimeType($imagePath);
+                    header("Content-Type: $mimeType");
+                    header("Cache-Control: public, max-age=86400"); // 缓存1天
+                    readfile($imagePath);
+                    return true;
+                } else {
+                    http_response_code(404);
+                    header('Content-Type: application/json');
+                    echo json_encode(['error' => '图片文件不存在或无法访问']);
+                    return true;
+                }
             }
+            
+            // 图片ID未找到
+            http_response_code(404);
+            header('Content-Type: application/json');
+            echo json_encode(['error' => '图片未找到']);
+            return true;
+        } catch (Exception $e) {
+            http_response_code(500);
+            header('Content-Type: application/json');
+            echo json_encode([
+                'error' => '加载图片失败',
+                'message' => $e->getMessage()
+            ]);
+            return true;
         }
-        
-        // 图片未找到
-        http_response_code(404);
-        header('Content-Type: application/json');
-        echo json_encode(['error' => '图片未找到']);
-        exit;
     }
+    
+    // 未处理的请求
+    return false;
 }
 
 // 获取图片列表（带缓存）
@@ -136,7 +179,8 @@ function getImages($config, $forceRefresh = false) {
     if (!$forceRefresh && file_exists($cacheFile) && 
         (time() - filemtime($cacheFile) < $cacheDuration)) {
         $cached = file_get_contents($cacheFile);
-        return json_decode($cached, true) ?: [];
+        $result = json_decode($cached, true);
+        return $result ?: [];
     }
     
     // 缓存无效，重新扫描
@@ -144,15 +188,20 @@ function getImages($config, $forceRefresh = false) {
     $scanSubfolders = $config['settings']['scan_subfolders'] === 'true';
     $maxDepth = (int)$config['settings']['max_depth'];
     
-    $images = [];
-    if (is_dir($imageFolder)) {
-        $images = scanImages($imageFolder, $imageFolder, 0, $scanSubfolders, $maxDepth);
-    } else {
-        error_log("图片目录不存在: $imageFolder");
+    // 验证图片目录
+    if (!is_dir($imageFolder)) {
+        throw new Exception("图片目录不存在: $imageFolder");
+    }
+    if (!is_readable($imageFolder)) {
+        throw new Exception("没有权限访问图片目录: $imageFolder");
     }
     
+    $images = scanImages($imageFolder, $imageFolder, 0, $scanSubfolders, $maxDepth);
+    
     // 保存到缓存
-    file_put_contents($cacheFile, json_encode($images));
+    if (file_put_contents($cacheFile, json_encode($images)) === false) {
+        error_log("无法写入缓存文件: $cacheFile");
+    }
     
     return $images;
 }
@@ -178,6 +227,8 @@ function scanImages($rootDir, $currentDir, $currentDepth, $scanSubfolders, $maxD
         if ($item == '.' || $item == '..') continue;
         
         $path = $currentDir . '/' . $item;
+        // 处理路径中的双斜杠问题
+        $path = preg_replace('#/+#', '/', $path);
         $relativePath = str_replace($rootDir . '/', '', $path);
         
         if (is_dir($path) && $scanSubfolders && 
@@ -257,7 +308,5 @@ function clearCache() {
         }
     }
 }
-
-// 如果不是API请求，输出HTML页面
-include 'index.html';
 ?>
+    
