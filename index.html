@@ -3,112 +3,142 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>服务器相册</title>
-    <link rel="stylesheet" href="web/css/style.css">
+    <title>Ubuntu服务器相册</title>
+    <link rel="stylesheet" href="web/css/styles.css">
+    <!-- 引入必要的外部资源 -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 </head>
 <body>
-    <!-- 顶部导航 -->
-    <header class="header">
-        <h1>服务器相册</h1>
-        <div class="controls">
-            <button id="refreshBtn" class="btn">🔄 刷新</button>
-            <button id="settingsBtn" class="btn">⚙️ 设置</button>
+    <header class="app-header">
+        <div class="container">
+            <h1>Ubuntu服务器相册</h1>
+            <div class="controls">
+                <button id="galleryBtn" class="btn active">画廊</button>
+                <button id="settingsBtn" class="btn">设置</button>
+                <button id="refreshBtn" class="btn">刷新缓存</button>
+            </div>
         </div>
     </header>
 
-    <!-- 图片网格 -->
-    <main class="gallery-container">
-        <div id="imageGrid" class="image-grid"></div>
-        
-        <!-- 加载指示器 -->
-        <div id="loadingIndicator" class="loading-indicator hidden">
-            <div class="spinner"></div>
-            <p>加载中...</p>
-        </div>
-        
-        <!-- 空状态 -->
-        <div id="emptyState" class="empty-state hidden">
-            <p>未找到图片，请检查设置中的图片目录</p>
-        </div>
-        
-        <!-- 错误状态 -->
-        <div id="errorState" class="error-state hidden">
-            <p id="errorMessage">加载失败，请重试</p>
-        </div>
+    <main class="container">
+        <!-- 画廊视图 -->
+        <section id="galleryView" class="view active">
+            <div class="filters">
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="搜索图片...">
+                    <button id="searchBtn" class="btn">搜索</button>
+                </div>
+                <div class="sort-options">
+                    <select id="sortSelect" class="form-control">
+                        <option value="name_asc">按名称升序</option>
+                        <option value="name_desc">按名称降序</option>
+                        <option value="date_asc">按日期升序</option>
+                        <option value="date_desc">按日期降序</option>
+                        <option value="size_asc">按大小升序</option>
+                        <option value="size_desc">按大小降序</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="gallery" class="gallery-grid"></div>
+
+            <div class="pagination" id="pagination">
+                <button id="prevPage" class="btn" disabled>上一页</button>
+                <span id="pageInfo">第 1 页</span>
+                <button id="nextPage" class="btn">下一页</button>
+                <div class="page-jump">
+                    <input type="number" id="pageJumpInput" min="1" value="1" class="form-control">
+                    <button id="jumpToPageBtn" class="btn">跳转</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- 设置视图 -->
+        <section id="settingsView" class="view">
+            <form id="settingsForm" class="settings-form">
+                <div class="form-group">
+                    <label for="imagePath">图片文件夹路径</label>
+                    <div class="path-input-group">
+                        <input type="text" id="imagePath" class="form-control" required>
+                        <button type="button" id="addPathBtn" class="btn">添加</button>
+                    </div>
+                    <div id="pathList" class="path-list"></div>
+                </div>
+
+                <div class="form-group">
+                    <label for="scanSubfolders">
+                        <input type="checkbox" id="scanSubfolders"> 扫描子文件夹
+                    </label>
+                </div>
+
+                <div class="form-group">
+                    <label for="maxDepth">最大扫描深度 (0为无限制)</label>
+                    <input type="number" id="maxDepth" min="0" value="0" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label for="imagesPerRow">每行显示图片数量</label>
+                    <input type="range" id="imagesPerRow" min="1" max="10" value="4" class="form-range">
+                    <span id="imagesPerRowValue">4</span>
+                </div>
+
+                <div class="form-group">
+                    <label for="cacheTTL">缓存有效期 (秒)</label>
+                    <input type="number" id="cacheTTL" min="0" value="3600" class="form-control">
+                </div>
+
+                <div class="form-group">
+                    <label for="port">应用运行端口</label>
+                    <input type="number" id="port" min="1" max="65535" value="8080" class="form-control">
+                </div>
+
+                <div class="form-actions">
+                    <button type="submit" class="btn primary">保存设置</button>
+                    <button type="button" id="resetSettingsBtn" class="btn">重置</button>
+                </div>
+            </form>
+        </section>
     </main>
 
-    <!-- 分页控件 -->
-    <div id="pagination" class="pagination hidden">
-        <button id="prevPage" class="btn pagination-btn">上一页</button>
-        <span id="pageInfo" class="page-info"></span>
-        <button id="nextPage" class="btn pagination-btn">下一页</button>
-    </div>
-
-    <!-- 图片查看模态框 -->
-    <div id="imageModal" class="modal hidden">
+    <!-- 图片预览模态框 -->
+    <div id="imageModal" class="modal">
         <div class="modal-content">
-            <button id="closeModal" class="close-btn">&times;</button>
-            <img id="modalImage" class="modal-image" src="" alt="图片预览">
-            <div class="modal-details">
-                <h3 id="modalTitle"></h3>
-                <p><strong>路径:</strong> <span id="modalPath"></span></p>
-                <p><strong>大小:</strong> <span id="modalSize"></span></p>
-                <p><strong>修改时间:</strong> <span id="modalModified"></span></p>
-                <a id="downloadLink" class="btn download-btn" download>下载图片</a>
+            <span class="close-btn">&times;</span>
+            <div class="modal-image-container">
+                <button class="modal-btn rotate-left" data-action="rotateLeft" title="向左旋转">↺</button>
+                <img id="modalImage" src="" alt="图片预览">
+                <button class="modal-btn rotate-right" data-action="rotateRight" title="向右旋转">↻</button>
+            </div>
+            <div class="modal-controls">
+                <button class="modal-btn flip-horizontal" data-action="flipHorizontal" title="水平翻转">⟷</button>
+                <button class="modal-btn flip-vertical" data-action="flipVertical" title="垂直翻转">⟲</button>
+                <a id="downloadLink" class="modal-btn download" download title="下载图片">↓ 下载</a>
+                <button class="modal-btn fullscreen" data-action="fullscreen" title="全屏查看">⛶</button>
+            </div>
+            <div class="image-info">
+                <h3 id="imageTitle"></h3>
+                <p>
+                    <span id="imageSize"></span> | 
+                    <span id="imageDimensions"></span> | 
+                    <span id="imageModified"></span>
+                </p>
             </div>
         </div>
     </div>
 
-    <!-- 设置模态框 -->
-    <div id="settingsModal" class="modal hidden">
-        <div class="modal-content settings-modal">
-            <button id="closeSettings" class="close-btn">&times;</button>
-            <h2>设置</h2>
-            <form id="settingsForm">
-                <div class="form-group">
-                    <label for="imageFolder">图片文件夹路径:</label>
-                    <input type="text" id="imageFolder" required>
-                </div>
-                
-                <div class="form-group">
-                    <label>
-                        <input type="checkbox" id="scanSubfolders"> 扫描子文件夹
-                    </label>
-                </div>
-                
-                <div class="form-group">
-                    <label for="maxDepth">最大扫描深度 (0表示无限制):</label>
-                    <input type="number" id="maxDepth" min="0" value="0">
-                </div>
-                
-                <div class="form-group">
-                    <label for="imagesPerRow">每行显示图片数量:</label>
-                    <input type="number" id="imagesPerRow" min="1" max="10" value="5">
-                </div>
-                
-                <div class="form-group">
-                    <label for="cacheDuration">缓存时间 (秒):</label>
-                    <input type="number" id="cacheDuration" min="60" value="600">
-                </div>
-                
-                <div class="form-actions">
-                    <button type="button" id="cancelSettings" class="btn cancel-btn">取消</button>
-                    <button type="submit" class="btn save-btn">保存设置</button>
-                </div>
-            </form>
-        </div>
+    <!-- 通知提示 -->
+    <div id="notification" class="notification"></div>
+
+    <!-- 加载指示器 -->
+    <div id="loader" class="loader">
+        <div class="spinner"></div>
+        <p>加载中...</p>
     </div>
 
-    <!-- 确保脚本按正确顺序加载 -->
-    <script type="module">
-        // 先加载基础库
-        import './web/js/gallery.js'
-            .then(() => import('./web/js/settings.js'))
-            .then(() => import('./web/js/app.js'))
-            .catch(error => {
-                console.error('脚本加载失败:', error);
-                alert('应用加载失败，请刷新页面重试');
-            });
-    </script>
+    <!-- JavaScript文件 -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="web/js/gallery.js"></script>
+    <script src="web/js/settings.js"></script>
+    <script src="web/js/app.js"></script>
 </body>
 </html>
