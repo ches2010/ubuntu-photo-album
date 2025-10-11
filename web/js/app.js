@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
         imagesPerRow: 5
     };
 
-    // 获取DOM元素并绑定事件
+    // 获取DOM元素
     const refreshBtn = document.getElementById('refreshBtn');
     const settingsBtn = document.getElementById('settingsBtn');
     const prevPageBtn = document.getElementById('prevPage');
@@ -21,16 +21,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const imageModal = document.getElementById('imageModal');
     const closeModalBtn = document.getElementById('closeModal');
 
-    // 绑定按钮事件
+    // 绑定刷新按钮事件（已修复）
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function() {
             console.log('刷新按钮被点击，开始强制刷新图片');
             // 添加按钮加载状态
             this.disabled = true;
             this.innerHTML = '🔄 刷新中...';
-
+            
             // 调用加载图片函数，强制刷新缓存
-            loadImages(true);
+            loadImages(true)
                 .then(() => {
                     // 恢复按钮状态
                     this.disabled = false;
@@ -46,13 +46,12 @@ document.addEventListener('DOMContentLoaded', function() {
         console.error('未找到刷新按钮元素');
     }
 
+    // 绑定其他按钮事件
     if (settingsBtn) {
         settingsBtn.addEventListener('click', function() {
             console.log('设置按钮被点击');
             openSettingsModal();
         });
-    } else {
-        console.error('未找到设置按钮元素');
     }
 
     if (prevPageBtn) {
@@ -119,19 +118,19 @@ document.addEventListener('DOMContentLoaded', function() {
     // 初始加载图片
     loadImages();
 
-    // 加载图片列表
+    // 加载图片列表（返回Promise，支持异步等待）
     function loadImages(forceRefresh = false) {
         return new Promise((resolve, reject) => {
             showLoading();
             hideEmptyState();
             hideErrorState();
-        
+            
             let url = `/api/images?page=${state.currentPage}&per_page=${state.perPage}`;
             if (forceRefresh) {
                 url += `&t=${new Date().getTime()}`;
                 console.log('强制刷新，添加时间戳参数');
             }
-        
+            
             fetch(url)
                 .then(response => {
                     if (!response.ok) {
@@ -148,16 +147,16 @@ document.addEventListener('DOMContentLoaded', function() {
                     state.totalPages = data.total_pages || 0;
                     state.totalImages = data.total_images || 0;
                     state.imagesPerRow = data.images_per_row || 5;
-                
+                    
                     updateImageGrid(data.images || []);
                     updatePagination();
                     updateGridColumns();
                     hideLoading();
-                
+                    
                     if (state.totalImages === 0) {
                         showEmptyState();
                     }
-
+                    
                     resolve(); // 成功完成
                 })
                 .catch(error => {
@@ -293,7 +292,7 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
-    // 保存设置
+    // 保存设置（修复：保存后强制刷新）
     function saveSettings() {
         const settings = {
             image_folder: document.getElementById('imageFolder').value,
@@ -302,13 +301,13 @@ document.addEventListener('DOMContentLoaded', function() {
             images_per_row: document.getElementById('imagesPerRow').value,
             cache_duration: document.getElementById('cacheDuration').value
         };
-
+        
         // 显示保存中状态
         const saveButton = settingsForm.querySelector('button[type="submit"]');
         const originalText = saveButton.innerHTML;
         saveButton.disabled = true;
         saveButton.innerHTML = '保存中...';
-                
+        
         fetch('/api/config', {
             method: 'POST',
             headers: {
@@ -330,7 +329,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 saveButton.innerHTML = originalText;
             });
         })
-                
         .catch(error => {
             console.error('保存设置失败:', error);
             alert('保存设置失败: ' + error.message);
@@ -340,7 +338,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 
-    // 加载状态显示
+    // 状态显示控制函数
     function showLoading() {
         document.getElementById('loading').classList.remove('hidden');
     }
@@ -349,7 +347,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('loading').classList.add('hidden');
     }
 
-    // 空状态显示
     function showEmptyState() {
         document.getElementById('emptyState').classList.remove('hidden');
     }
@@ -358,7 +355,6 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('emptyState').classList.add('hidden');
     }
 
-    // 错误状态显示
     function showErrorState(message) {
         const errorState = document.getElementById('errorState');
         const errorMessage = document.getElementById('errorMessage');
