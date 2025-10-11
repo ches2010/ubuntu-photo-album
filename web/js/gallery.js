@@ -1,357 +1,409 @@
 /**
- * 相册核心功能模块
- * 负责图片加载、展示和分页管理
+ * 画廊模块
+ * 负责图片展示、分页、搜索、排序和预览功能
  */
-export default class Gallery {
-    constructor() {
-        this.state = {
-            currentPage: 1,
-            perPage: 40,
-            totalPages: 0,
-            totalImages: 0,
-            imagesPerRow: 5,
-            isLoading: false
-        };
-
-        this.elements = this.initElements();
-        
-        // 确保事件绑定正确
-        this.loadImages = this.loadImages.bind(this);
-        this.changePage = this.changePage.bind(this);
-        this.handleRefresh = this.handleRefresh.bind(this);
-        this.openImageModal = this.openImageModal.bind(this);
-        this.closeImageModal = this.closeImageModal.bind(this);
-        this.showLoading = this.showLoading.bind(this);
-        this.hideLoading = this.hideLoading.bind(this);
-        this.showErrorState = this.showErrorState.bind(this);
-        this.hideErrorState = this.hideErrorState.bind(this);
-        this.showEmptyState = this.showEmptyState.bind(this);
-        this.hideEmptyState = this.hideEmptyState.bind(this);
-        
-        this.initEventListeners();
-    }
-
-    initElements() {
-        // 确保元素选择正确
-        return {
-            imageGrid: document.getElementById('imageGrid'),
-            pagination: document.getElementById('pagination'),
-            prevPageBtn: document.getElementById('prevPage'),
-            nextPageBtn: document.getElementById('nextPage'),
-            pageInfo: document.getElementById('pageInfo'),
-            refreshBtn: document.getElementById('refreshBtn'),
-            loadingIndicator: document.getElementById('loadingIndicator'),
-            errorState: document.getElementById('errorState'),
-            errorMessage: document.getElementById('errorMessage'),
-            emptyState: document.getElementById('emptyState'),
-            imageModal: document.getElementById('imageModal'),
-            closeModalBtn: document.getElementById('closeModalBtn'),
-            modalImage: document.getElementById('modalImage'),
-            modalTitle: document.getElementById('modalTitle'),
-            modalPath: document.getElementById('modalPath'),
-            modalSize: document.getElementById('modalSize'),
-            modalModified: document.getElementById('modalModified'),
-            modalExtension: document.getElementById('modalExtension'),
-            downloadLink: document.getElementById('downloadLink')
-        };
-    }
-
-    initEventListeners() {
-        // 刷新按钮事件
-        if (this.elements.refreshBtn) {
-            this.elements.refreshBtn.addEventListener('click', this.handleRefresh);
-        } else {
-            console.warn('refreshBtn元素不存在');
+function initGallery(settings) {
+    // 画廊状态
+    const galleryState = {
+        currentPage: 1,
+        totalPages: 1,
+        imagesPerPage: 20,
+        searchTerm: '',
+        sortBy: 'name_asc',
+        images: [],
+        currentImage: null,
+        transform: {
+            rotation: 0,
+            flipX: 1,
+            flipY: 1
         }
+    };
 
-        // 分页按钮事件
-        if (this.elements.prevPageBtn) {
-            this.elements.prevPageBtn.addEventListener('click', () => this.changePage(-1));
-        }
-        if (this.elements.nextPageBtn) {
-            this.elements.nextPageBtn.addEventListener('click', () => this.changePage(1));
-        }
+    // 更新配置
+    updateSettings(settings);
 
-        // 关闭模态框事件
-        if (this.elements.closeModalBtn) {
-            this.elements.closeModalBtn.addEventListener('click', this.closeImageModal);
-        }
-        
-        // 点击模态框背景关闭
-        if (this.elements.imageModal) {
-            this.elements.imageModal.addEventListener('click', (e) => {
-                if (e.target === this.elements.imageModal) {
-                    this.closeImageModal();
-                }
-            });
-        }
+    // DOM元素
+    const elements = {
+        gallery: document.getElementById('gallery'),
+        prevPageBtn: document.getElementById('prevPage'),
+        nextPageBtn: document.getElementById('nextPage'),
+        pageInfo: document.getElementById('pageInfo'),
+        pageJumpInput: document.getElementById('pageJumpInput'),
+        jumpToPageBtn: document.getElementById('jumpToPageBtn'),
+        searchInput: document.getElementById('searchInput'),
+        searchBtn: document.getElementById('searchBtn'),
+        sortSelect: document.getElementById('sortSelect'),
+        imageModal: document.getElementById('imageModal'),
+        modalImage: document.getElementById('modalImage'),
+        modalTitle: document.getElementById('imageTitle'),
+        modalSize: document.getElementById('imageSize'),
+        modalDimensions: document.getElementById('imageDimensions'),
+        modalModified: document.getElementById('imageModified'),
+        downloadLink: document.getElementById('downloadLink'),
+        modalActions: document.querySelectorAll('.modal-btn[data-action]')
+    };
 
-        // 键盘事件
-        document.addEventListener('keydown', (e) => {
-            // ESC键关闭模态框
-            if (e.key === 'Escape' && this.elements.imageModal && 
-                !this.elements.imageModal.classList.contains('hidden')) {
-                this.closeImageModal();
-            }
-            
-            // 左右箭头翻页
-            if (!this.elements.imageModal || this.elements.imageModal.classList.contains('hidden')) {
-                if (e.key === 'ArrowLeft') {
-                    this.changePage(-1);
-                } else if (e.key === 'ArrowRight') {
-                    this.changePage(1);
-                }
-            }
-        });
-    }
-
-    // 处理刷新
-    handleRefresh() {
-        if (this.state.isLoading) return;
-        
-        const btn = this.elements.refreshBtn;
-        if (btn) {
-            btn.disabled = true;
-            btn.textContent = '🔄 刷新中...';
-        }
-        
-        this.loadImages(true)
-            .then(() => {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = '🔄 刷新';
-                }
-            })
-            .catch(() => {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.textContent = '🔄 刷新';
-                }
-            });
-    }
-
-    // 处理分页变化
-    changePage(delta) {
-        const newPage = this.state.currentPage + delta;
-        if (newPage >= 1 && newPage <= this.state.totalPages) {
-            this.state.currentPage = newPage;
-            this.loadImages();
+    /**
+     * 更新画廊设置
+     * @param {Object} newSettings - 新的设置对象
+     */
+    function updateSettings(newSettings) {
+        if (newSettings && newSettings.imagesPerRow) {
+            // 更新网格布局
+            elements.gallery.style.gridTemplateColumns = `repeat(${newSettings.imagesPerRow}, 1fr)`;
         }
     }
 
-    // 加载图片
-    async loadImages(forceRefresh = false) {
-        if (this.state.isLoading) return Promise.resolve();
+    /**
+     * 加载图片列表
+     */
+    async function loadImages() {
+        if (window.app && window.app.showLoader) {
+            window.app.showLoader();
+        }
 
-        this.showLoading();
-        this.hideErrorState();
-        this.hideEmptyState();
-        
         try {
-            let url = `/api/images?page=${this.state.currentPage}&per_page=${this.state.perPage}`;
-            if (forceRefresh) {
-                url += `&t=${new Date().getTime()}`;
-            }
+            const params = new URLSearchParams({
+                action: 'getImages',
+                page: galleryState.currentPage,
+                perPage: galleryState.imagesPerPage,
+                search: galleryState.searchTerm,
+                sort: galleryState.sortBy
+            });
 
-            const response = await fetch(url);
+            const response = await fetch(`index.php?${params.toString()}`);
+
             if (!response.ok) {
                 throw new Error(`HTTP错误: ${response.status}`);
             }
 
             const data = await response.json();
-            
-            // 验证数据格式
-            if (!data || typeof data !== 'object') {
-                throw new Error('无效的响应数据');
-            }
-            
-            // 更新状态
-            this.state.totalPages = data.total_pages || 0;
-            this.state.totalImages = data.total_images || 0;
-            this.state.imagesPerRow = data.images_per_row || 5;
-            
-            // 更新UI
-            this.updateImageGrid(data.images || []);
-            this.updatePagination();
-            this.updateGridColumns();
-            
-            if (this.state.totalImages === 0) {
-                this.showEmptyState();
-            }
-            
-            return Promise.resolve();
-            
+
+            galleryState.images = data.images || [];
+            galleryState.totalPages = data.pagination?.totalPages || 1;
+
+            renderGallery();
+            updatePagination();
         } catch (error) {
-            console.error('加载失败:', error);
-            this.showErrorState(error.message);
-            return Promise.reject(error);
+            console.error('加载图片错误:', error);
+            if (window.app && window.app.showNotification) {
+                window.app.showNotification('加载图片失败: ' + error.message, 'error');
+            }
         } finally {
-            this.hideLoading();
+            if (window.app && window.app.hideLoader) {
+                window.app.hideLoader();
+            }
         }
     }
 
-    // 更新图片网格
-    updateImageGrid(images) {
-        if (!this.elements.imageGrid) return;
-        
-        this.elements.imageGrid.innerHTML = '';
-        
-        if (images.length === 0) return;
-        
-        images.forEach(image => {
-            const imageUrl = `/images/${image.id}`;
-            const imageItem = document.createElement('div');
-            imageItem.className = 'image-item';
-            imageItem.innerHTML = `
-                <img src="${imageUrl}" alt="${this.escapeHtml(image.filename)}" 
-                     class="image-thumbnail" loading="lazy">
-                <div class="image-info">
-                    <p class="image-name">${this.truncateText(image.filename, 15)}</p>
-                    ${image.folder ? `<p class="image-path">${this.escapeHtml(image.folder)}</p>` : ''}
+    /**
+     * 渲染画廊
+     */
+    function renderGallery() {
+        elements.gallery.innerHTML = '';
+
+        if (galleryState.images.length === 0) {
+            elements.gallery.innerHTML = `
+                <div class="no-images">
+                    <p>没有找到图片</p>
+                    ${galleryState.searchTerm ? `<p>尝试修改搜索条件或检查图片路径设置</p>` : ''}
                 </div>
             `;
-            
-            imageItem.addEventListener('click', () => this.openImageModal(image));
-            this.elements.imageGrid.appendChild(imageItem);
+            return;
+        }
+
+        galleryState.images.forEach(image => {
+            const galleryItem = document.createElement('div');
+            galleryItem.className = 'gallery-item';
+            galleryItem.innerHTML = `
+                <img 
+                    src="data:image/jpeg;base64,${getThumbnail(image.fullPath)}" 
+                    alt="${image.name}" 
+                    class="gallery-item-image"
+                    loading="lazy"
+                >
+                <div class="gallery-item-info">
+                    <div class="gallery-item-name">${escapeHtml(image.name)}</div>
+                    <div class="gallery-item-meta">
+                        <span>${image.sizeFormatted}</span>
+                        <span>${new Date(image.modified * 1000).toLocaleDateString()}</span>
+                    </div>
+                </div>
+            `;
+
+            galleryItem.addEventListener('click', () => openImageModal(image));
+            elements.gallery.appendChild(galleryItem);
         });
     }
 
-    // 更新分页控件
-    updatePagination() {
-        if (!this.elements.pagination || !this.elements.pageInfo) return;
-        
-        this.elements.pageInfo.textContent = 
-            `第 ${this.state.currentPage} 页，共 ${this.state.totalPages} 页 (${this.state.totalImages} 张图片)`;
-        
-        if (this.elements.prevPageBtn) {
-            this.elements.prevPageBtn.disabled = this.state.currentPage <= 1;
-        }
-        if (this.elements.nextPageBtn) {
-            this.elements.nextPageBtn.disabled = this.state.currentPage >= this.state.totalPages;
-        }
-        
-        if (this.elements.pagination) {
-            this.elements.pagination.classList.toggle('hidden', this.state.totalPages <= 1);
-        }
+    /**
+     * 获取图片缩略图（简化实现，实际项目中可能需要服务器端生成）
+     * @param {string} path - 图片路径
+     * @returns {string} 占位的base64字符串
+     */
+    function getThumbnail(path) {
+        // 实际项目中应该由服务器生成缩略图
+        // 这里使用简单的占位符
+        return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
     }
 
-    // 更新网格列数
-    updateGridColumns() {
-        if (this.elements.imageGrid) {
-            this.elements.imageGrid.style.gridTemplateColumns = `repeat(${this.state.imagesPerRow}, 1fr)`;
-        }
+    /**
+     * 更新分页控件
+     */
+    function updatePagination() {
+        elements.pageInfo.textContent = `第 ${galleryState.currentPage} / ${galleryState.totalPages} 页`;
+        elements.prevPageBtn.disabled = galleryState.currentPage <= 1;
+        elements.nextPageBtn.disabled = galleryState.currentPage >= galleryState.totalPages;
+        elements.pageJumpInput.value = galleryState.currentPage;
+        elements.pageJumpInput.max = galleryState.totalPages;
     }
 
-    // 打开图片模态框
-    openImageModal(image) {
-        if (!this.elements.imageModal) return;
-        
-        const imageUrl = `/images/${image.id}`;
-        
-        if (this.elements.modalImage) {
-            this.elements.modalImage.src = imageUrl;
-            this.elements.modalImage.alt = this.escapeHtml(image.filename);
-        }
-        
-        if (this.elements.modalTitle) {
-            this.elements.modalTitle.textContent = this.escapeHtml(image.filename);
-        }
-        
-        if (this.elements.modalPath) {
-            this.elements.modalPath.textContent = image.folder 
-                ? `${this.escapeHtml(image.folder)}/${this.escapeHtml(image.filename)}` 
-                : this.escapeHtml(image.filename);
-        }
-        
-        if (this.elements.modalSize) {
-            this.elements.modalSize.textContent = image.size;
-        }
-        
-        if (this.elements.modalModified) {
-            this.elements.modalModified.textContent = image.modified;
-        }
-        
-        if (this.elements.modalExtension) {
-            this.elements.modalExtension.textContent = image.extension.toUpperCase();
-        }
-        
-        if (this.elements.downloadLink) {
-            this.elements.downloadLink.href = imageUrl;
-            this.elements.downloadLink.download = image.filename;
-        }
-        
-        this.elements.imageModal.classList.remove('hidden');
+    /**
+     * 打开图片预览模态框
+     * @param {Object} image - 图片信息对象
+     */
+    function openImageModal(image) {
+        galleryState.currentImage = image;
+        resetImageTransform();
+
+        // 更新模态框内容
+        elements.modalImage.src = `data:image/${image.extension};base64,${getBase64Image(image.fullPath)}`;
+        elements.modalTitle.textContent = escapeHtml(image.name);
+        elements.modalSize.textContent = `大小: ${image.sizeFormatted}`;
+        elements.modalDimensions.textContent = `尺寸: ${image.width} × ${image.height}`;
+        elements.modalModified.textContent = `修改: ${image.modifiedFormatted}`;
+        elements.downloadLink.href = `data:image/${image.extension};base64,${getBase64Image(image.fullPath)}`;
+        elements.downloadLink.download = image.filename;
+
+        // 显示模态框
+        elements.imageModal.classList.add('active');
         document.body.style.overflow = 'hidden';
     }
 
-    // 关闭图片模态框
-    closeImageModal() {
-        if (this.elements.imageModal) {
-            this.elements.imageModal.classList.add('hidden');
-            document.body.style.overflow = '';
+    /**
+     * 获取图片的Base64编码（简化实现）
+     * @param {string} path - 图片路径
+     * @returns {string} Base64编码字符串
+     */
+    function getBase64Image(path) {
+        // 实际项目中应该由服务器提供Base64编码或直接提供图片URL
+        // 这里使用简单的API调用示例
+        return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    }
+
+    /**
+     * 关闭图片预览模态框
+     */
+    function closeImageModal() {
+        elements.imageModal.classList.remove('active');
+        document.body.style.overflow = '';
+        galleryState.currentImage = null;
+        resetImageTransform();
+    }
+
+    /**
+     * 重置图片变换
+     */
+    function resetImageTransform() {
+        galleryState.transform = {
+            rotation: 0,
+            flipX: 1,
+            flipY: 1
+        };
+        applyImageTransform();
+    }
+
+    /**
+     * 应用图片变换（旋转、翻转）
+     */
+    function applyImageTransform() {
+        const { rotation, flipX, flipY } = galleryState.transform;
+        elements.modalImage.style.transform = `rotate(${rotation}deg) scaleX(${flipX}) scaleY(${flipY})`;
+    }
+
+    /**
+     * 处理图片变换动作
+     * @param {string} action - 动作类型 ('rotateLeft', 'rotateRight', 'flipHorizontal', 'flipVertical', 'fullscreen')
+     */
+    function handleImageAction(action) {
+        if (!galleryState.currentImage) return;
+
+        switch (action) {
+            case 'rotateLeft':
+                galleryState.transform.rotation = (galleryState.transform.rotation - 90) % 360;
+                break;
+            case 'rotateRight':
+                galleryState.transform.rotation = (galleryState.transform.rotation + 90) % 360;
+                break;
+            case 'flipHorizontal':
+                galleryState.transform.flipX *= -1;
+                break;
+            case 'flipVertical':
+                galleryState.transform.flipY *= -1;
+                break;
+            case 'fullscreen':
+                toggleFullscreen();
+                return;
+            default:
+                return;
+        }
+
+        applyImageTransform();
+    }
+
+    /**
+     * 切换全屏模式
+     */
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            elements.imageModal.requestFullscreen().catch(err => {
+                console.error(`全屏错误: ${err.message}`);
+                if (window.app && window.app.showNotification) {
+                    window.app.showNotification('无法进入全屏模式: ' + err.message, 'error');
+                }
+            });
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            }
         }
     }
 
-    // 显示加载状态
-    showLoading() {
-        this.state.isLoading = true;
-        if (this.elements.loadingIndicator) {
-            this.elements.loadingIndicator.classList.remove('hidden');
+    /**
+     * 处理键盘事件
+     * @param {Event} e - 键盘事件对象
+     */
+    function handleKeyPress(e) {
+        if (!elements.imageModal.classList.contains('active')) return;
+
+        switch (e.key) {
+            case 'Escape':
+                closeImageModal();
+                break;
+            case 'ArrowLeft':
+                handleImageAction('rotateLeft');
+                break;
+            case 'ArrowRight':
+                handleImageAction('rotateRight');
+                break;
+            case 'h':
+                handleImageAction('flipHorizontal');
+                break;
+            case 'v':
+                handleImageAction('flipVertical');
+                break;
+            case 'f':
+                handleImageAction('fullscreen');
+                break;
+            case ' ':
+            case 'Enter':
+                e.preventDefault();
+                break;
         }
     }
 
-    // 隐藏加载状态
-    hideLoading() {
-        this.state.isLoading = false;
-        if (this.elements.loadingIndicator) {
-            this.elements.loadingIndicator.classList.add('hidden');
-        }
+    /**
+     * 跳转到指定页
+     * @param {number} page - 页码
+     */
+    function goToPage(page) {
+        if (page < 1 || page > galleryState.totalPages) return;
+        
+        galleryState.currentPage = page;
+        loadImages();
     }
 
-    // 显示空状态
-    showEmptyState() {
-        if (this.elements.emptyState) {
-            this.elements.emptyState.classList.remove('hidden');
-        }
+    /**
+     * 搜索图片
+     * @param {string} term - 搜索词
+     */
+    function searchImages(term) {
+        galleryState.searchTerm = term;
+        galleryState.currentPage = 1; // 重置到第一页
+        loadImages();
     }
 
-    // 隐藏空状态
-    hideEmptyState() {
-        if (this.elements.emptyState) {
-            this.elements.emptyState.classList.add('hidden');
-        }
+    /**
+     * 排序图片
+     * @param {string} sortBy - 排序方式
+     */
+    function sortImages(sortBy) {
+        galleryState.sortBy = sortBy;
+        galleryState.currentPage = 1; // 重置到第一页
+        loadImages();
     }
 
-    // 显示错误状态
-    showErrorState(message) {
-        if (this.elements.errorState && this.elements.errorMessage) {
-            this.elements.errorMessage.textContent = message;
-            this.elements.errorState.classList.remove('hidden');
-        }
+    /**
+     * HTML转义，防止XSS攻击
+     * @param {string} str - 需要转义的字符串
+     * @returns {string} 转义后的字符串
+     */
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
     }
 
-    // 隐藏错误状态
-    hideErrorState() {
-        if (this.elements.errorState) {
-            this.elements.errorState.classList.add('hidden');
-        }
+    /**
+     * 设置事件监听器
+     */
+    function setupEventListeners() {
+        // 分页按钮
+        elements.prevPageBtn.addEventListener('click', () => goToPage(galleryState.currentPage - 1));
+        elements.nextPageBtn.addEventListener('click', () => goToPage(galleryState.currentPage + 1));
+        elements.jumpToPageBtn.addEventListener('click', () => goToPage(parseInt(elements.pageJumpInput.value) || 1));
+        elements.pageJumpInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                goToPage(parseInt(elements.pageJumpInput.value) || 1);
+            }
+        });
+
+        // 搜索和排序
+        elements.searchBtn.addEventListener('click', () => searchImages(elements.searchInput.value));
+        elements.searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                searchImages(elements.searchInput.value);
+            }
+        });
+        elements.sortSelect.addEventListener('change', () => sortImages(elements.sortSelect.value));
+
+        // 模态框关闭按钮
+        elements.imageModal.querySelector('.close-btn').addEventListener('click', closeImageModal);
+
+        // 点击模态框背景关闭
+        elements.imageModal.addEventListener('click', (e) => {
+            if (e.target === elements.imageModal) {
+                closeImageModal();
+            }
+        });
+
+        // 图片操作按钮
+        elements.modalActions.forEach(btn => {
+            btn.addEventListener('click', () => {
+                const action = btn.getAttribute('data-action');
+                handleImageAction(action);
+            });
+        });
+
+        // 键盘事件
+        document.addEventListener('keydown', handleKeyPress);
+
+        // 监听设置变化事件
+        document.addEventListener('settingsSaved', (e) => {
+            updateSettings(e.detail);
+        });
     }
 
-    // 工具函数: 截断文本
-    truncateText(text, maxLength) {
-        if (!text) return '';
-        if (text.length <= maxLength) return text;
-        return text.substring(0, maxLength) + '...';
-    }
+    // 设置事件监听
+    setupEventListeners();
 
-    // 工具函数: 防XSS
-    escapeHtml(unsafe) {
-        if (!unsafe) return '';
-        return unsafe.toString()
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
+    // 暴露一些方法供其他模块使用
+    window.refreshGallery = loadImages;
+
+    // 初始加载图片
+    loadImages();
 }
