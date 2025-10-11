@@ -5,12 +5,30 @@
  */
 
 // 确保输出为JSON格式
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
-// 配置文件路径
+// 处理跨域请求
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
+
+// 处理OPTIONS请求
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
+
+// 获取请求操作，默认为显示首页
+$action = $_GET['action'] ?? 'default';
+
+// 数据库和配置初始化
 $configFile = 'config.json';
-// 缓存目录
 $cacheDir = 'cache/';
+
+// 确保缓存目录存在
+if (!is_dir($cacheDir)) {
+    mkdir($cacheDir, 0755, true);
+}
 
 // 默认配置
 $defaultConfig = [
@@ -55,6 +73,17 @@ function init() {
             break;
         case 'refreshCache':
             handleRefreshCache();
+            break;
+        case 'default':
+            // 新增：处理默认请求，返回前端页面
+            if (file_exists('index.html')) {
+                            // 切换到HTML内容类型
+                header('Content-Type: text/html; charset=utf-8');
+                readfile('index.html');
+            } else {
+                http_response_code(404);
+                echo json_encode(['error' => '首页文件不存在']);
+            }
             break;
         default:
             http_response_code(400);
@@ -310,19 +339,27 @@ function sortImages($images, $sort) {
 /**
  * 加载配置
  */
-function loadConfig() {
-    global $configFile, $defaultConfig;
+function loadConfig($file) {
+    $defaultConfig = [
+        'imagePaths' => [],
+        'scanSubfolders' => true,
+        'maxDepth' => 0,
+        'imagesPerRow' => 4,
+        'cacheTTL' => 3600,
+        'port' => 8080
+    ];
     
-    if (!file_exists($configFile)) {
+    if (!file_exists($file)) {
+        file_put_contents($file, json_encode($defaultConfig, JSON_PRETTY_PRINT));
         return $defaultConfig;
     }
     
-    $content = file_get_contents($configFile);
-    $config = json_decode($content, true);
-    
-    // 确保配置完整（合并默认配置）
-    return array_merge($defaultConfig, is_array($config) ? $config : []);
+    $config = json_decode(file_get_contents($file), true);
+    return $config ? array_merge($defaultConfig, $config) : $defaultConfig;
 }
+
+$config = loadConfig($configFile);
+
 
 /**
  * 保存配置
