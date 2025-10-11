@@ -97,6 +97,45 @@ function initGallery(settings) {
     }
 
     /**
+     * 创建图片元素并添加到画廊
+     * @param {Object} image - 图片信息对象
+     */
+    function addImageToGallery(image) {
+        const gallery = document.getElementById('gallery');
+        if (!gallery) return;
+
+        const imageContainer = document.createElement('div');
+        imageContainer.className = 'gallery-item';
+
+        // 创建图片元素
+        const img = document.createElement('img');
+        img.src = getThumbnail(image.path); // 使用服务器生成的缩略图
+        img.alt = image.name || '图片';
+        img.loading = 'lazy'; // 保持懒加载优化
+        img.dataset.fullImage = `index.php?action=getImage&path=${encodeURIComponent(image.path)}`;
+    
+        // 图片加载错误处理
+        img.addEventListener('error', function() {
+            // 加载失败时显示默认占位图
+            this.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
+        });
+
+        // 点击查看原图
+        img.addEventListener('click', function() {
+            openImageModal(this.dataset.fullImage, image);
+        });
+
+        // 添加图片标题
+        const caption = document.createElement('div');
+        caption.className = 'image-caption';
+        caption.textContent = image.name || '未知图片';
+
+        imageContainer.appendChild(img);
+        imageContainer.appendChild(caption);
+        gallery.appendChild(imageContainer);
+    }
+    
+    /**
      * 渲染画廊
      */
     function renderGallery() {
@@ -137,14 +176,14 @@ function initGallery(settings) {
     }
 
     /**
-     * 获取图片缩略图（简化实现，实际项目中可能需要服务器端生成）
+     * 获取图片缩略图
      * @param {string} path - 图片路径
      * @returns {string} 占位的base64字符串
      */
     function getThumbnail(path) {
-        // 实际项目中应该由服务器生成缩略图
-        // 这里使用简单的占位符
-        return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
+        // 调用服务器接口获取真实缩略图
+        /// 使用encodeURIComponent处理路径中的特殊字符
+        return `index.php?action=getThumbnail&path=${encodeURIComponent(path)}`;
     }
 
     /**
@@ -181,14 +220,32 @@ function initGallery(settings) {
     }
 
     /**
-     * 获取图片的Base64编码（简化实现）
+     * 获取图片的Base64编码
      * @param {string} path - 图片路径
      * @returns {string} Base64编码字符串
      */
-    function getBase64Image(path) {
-        // 实际项目中应该由服务器提供Base64编码或直接提供图片URL
-        // 这里使用简单的API调用示例
-        return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+    async function getBase64Image(path) {
+        try {
+            // 调用服务器接口获取Base64编码
+            const response = await fetch(`index.php?action=getBase64Image&path=${encodeURIComponent(path)}`);
+
+            if (!response.ok) {
+                throw new Error('获取图片失败');
+            }
+
+            const result = await response.json();
+            
+            if (result.error) {
+                throw new Error(result.error);
+            }
+
+            // 返回完整的Base64图片格式
+            return `data:${result.mimeType};base64,${result.base64}`;
+        } catch (error) {
+            console.error('获取Base64图片错误:', error);
+            // 失败时返回默认占位图
+            return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+        }
     }
 
     /**
