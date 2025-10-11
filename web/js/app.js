@@ -2,7 +2,7 @@
  * 应用主控制器
  * 负责初始化应用、管理视图切换和全局状态
  */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     // 全局状态
     const appState = {
         currentView: 'gallery',
@@ -20,7 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
         notification: document.getElementById('notification'),
         loader: document.getElementById('loader')
     };
-
+   
     /**
      * 初始化应用
      */
@@ -54,21 +54,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * 加载应用设置
+     * 加载设置
      */
     async function loadSettings() {
         try {
             const response = await fetch('index.php?action=getSettings');
-            
-            if (!response.ok) {
-                throw new Error('获取设置失败');
-            }
+            if (!response.ok) throw new Error('加载设置失败');
             
             appState.settings = await response.json();
-            return appState.settings;
+            
+            // 初始化设置面板
+            if (window.initSettings) {
+                window.initSettings(appState.settings);
+            }
         } catch (error) {
             console.error('加载设置错误:', error);
-            throw error;
+            showNotification('加载设置失败', 'error');
         }
     }
 
@@ -76,93 +77,81 @@ document.addEventListener('DOMContentLoaded', () => {
      * 切换视图
      * @param {string} viewName - 视图名称 ('gallery' 或 'settings')
      */
-    function switchView(viewName) {
-        if (viewName !== 'gallery' && viewName !== 'settings') {
-            return;
-        }
+    function switchView(view) {
+        if (view === appState.currentView) return;
         
-        appState.currentView = viewName;
+        appState.currentView = view;
         
         // 更新视图显示状态
-        elements.galleryView.classList.toggle('active', viewName === 'gallery');
-        elements.settingsView.classList.toggle('active', viewName === 'settings');
+        elements.galleryView.classList.toggle('active', view === 'gallery');
+        elements.settingsView.classList.toggle('active', view === 'settings');
         
-        // 更新按钮激活状态
-        elements.galleryBtn.classList.toggle('active', viewName === 'gallery');
-        elements.settingsBtn.classList.toggle('active', viewName === 'settings');
+        // 更新按钮状态
+        elements.galleryBtn.classList.toggle('active', view === 'gallery');
+        elements.settingsBtn.classList.toggle('active', view === 'settings');
         
         // 如果切换到画廊，刷新图片列表
-        if (viewName === 'gallery' && typeof refreshGallery === 'function') {
-            refreshGallery();
+        if (view === 'gallery') {
+            if (window.loadGallery) {
+                window.loadGallery();
+            }
+        } 
+        // 如果切换到设置，加载设置
+        else if (view === 'settings' && appState.settings && window.initSettings) {
+            window.initSettings(appState.settings);
         }
     }
 
     /**
      * 显示通知
-     * @param {string} message - 通知消息
-     * @param {string} type - 通知类型 ('success', 'error' 或 'info')
-     * @param {number} duration - 显示时长(毫秒)，默认3000
+     * @param {string} message - 通知内容
+     * @param {string} type - 通知类型：success, error, info
      */
-    function showNotification(message, type = 'info', duration = 3000) {
-        const notification = elements.notification;
+    function showNotification(message, type = 'info') {
+        elements.notification.textContent = message;
+        elements.notification.className = 'notification ' + type;
+        elements.notification.style.display = 'block';
         
-        // 设置通知内容和类型
-        notification.textContent = message;
-        notification.className = 'notification';
-        notification.classList.add(type, 'show');
-        
-        // 自动隐藏
         setTimeout(() => {
-            notification.classList.remove('show');
-        }, duration);
+            elements.notification.style.display = 'none';
+        }, 3000);
     }
 
     /**
      * 显示加载指示器
      */
     function showLoader() {
-        appState.isLoading = true;
-        elements.loader.classList.add('show');
+        elements.loader.style.display = 'flex';
     }
 
     /**
      * 隐藏加载指示器
      */
     function hideLoader() {
-        appState.isLoading = false;
-        elements.loader.classList.remove('show');
+        elements.loader.style.display = 'none';
     }
 
     /**
-     * 刷新缓存并重新加载数据
+     * 刷新缓存并重新加载图片
      */
     async function refreshCache() {
-        if (appState.isLoading) return;
-        
         showLoader();
-        
         try {
             const response = await fetch('index.php?action=refreshCache');
-            
-            if (!response.ok) {
-                throw new Error('刷新缓存失败');
-            }
-            
             const result = await response.json();
             
-            if (result.success) {
-                showNotification(result.message, 'success');
-                
-                // 刷新画廊
-                if (typeof refreshGallery === 'function') {
-                    refreshGallery();
+            if (response.ok) {
+                showNotification('缓存已刷新，正在重新加载图片...', 'success');
+                // 重新加载图片
+                if (window.loadGallery) {
+                    window.loadGallery();
                 }
             } else {
-                showNotification(result.error || '刷新缓存失败', 'error');
+                showNotification('刷新缓存失败: ' + (result.error || '未知错误'), 'error');
             }
         } catch (error) {
-            showNotification('刷新缓存时出错: ' + error.message, 'error');
             console.error('刷新缓存错误:', error);
+            showNotification('刷新缓存时发生错误', 'error');
         } finally {
             hideLoader();
         }
@@ -172,34 +161,48 @@ document.addEventListener('DOMContentLoaded', () => {
      * 设置事件监听器
      */
     function setupEventListeners() {
-        // 视图切换按钮
-        elements.galleryBtn.addEventListener('click', () => switchView('gallery'));
-        elements.settingsBtn.addEventListener('click', () => switchView('settings'));
+        // 确保按钮元素存在再绑定事件
+        if (elements.galleryBtn) {
+            elements.galleryBtn.addEventListener('click', () => switchView('gallery'));
+        }
         
-        // 刷新缓存按钮
-        elements.refreshBtn.addEventListener('click', refreshCache);
+        if (elements.settingsBtn) {
+            elements.settingsBtn.addEventListener('click', () => switchView('settings'));
+        }
         
-        // 监听设置保存事件，以便更新应用状态
-        document.addEventListener('settingsSaved', async (e) => {
+        if (elements.refreshBtn) {
+            elements.refreshBtn.addEventListener('click', refreshCache);
+        }
+        
+        // 监听设置保存事件，更新本地设置并刷新画廊
+        document.addEventListener('settingsSaved', (e) => {
             appState.settings = e.detail;
             showNotification('设置已保存', 'success');
-            
-            // 如果当前在画廊视图，刷新图片
-            if (appState.currentView === 'gallery' && typeof refreshGallery === 'function') {
-                refreshGallery();
-            }
+            switchView('gallery');
         });
     }
 
-    // 暴露一些方法供其他模块使用
-    window.app = {
-        showNotification,
-        showLoader,
-        hideLoader,
-        getSettings: () => ({ ...appState.settings }),
-        switchView
-    };
+    /**
+     * 初始化应用
+     */
+    function initApp() {
+        setupEventListeners();
+        loadSettings();
+        
+        // 初始化画廊
+        if (window.initGallery) {
+            window.initGallery();
+        }
+        
+        // 暴露方法供其他模块使用
+        window.app = {
+            showNotification,
+            showLoader,
+            hideLoader,
+            switchView
+        };
+    }
 
-    // 初始化应用
+    // 启动应用
     initApp();
 });
