@@ -68,6 +68,35 @@ function init() {
     
     // 路由到相应的处理函数
     switch ($action) {
+        case 'getThumbnail':
+            if (!isset($_GET['path'])) {
+                http_response_code(400);
+                echo json_encode(['error' => '缺少图片路径参数']);
+                exit;
+            }
+    
+            $imagePath = urldecode($_GET['path']);
+            $settings = loadSettings();
+    
+            // 验证图片路径是否在配置的目录中（安全检查）
+            $isValid = false;
+            foreach ($settings['imagePaths'] as $allowedPath) {
+                if (strpos($imagePath, $allowedPath) === 0) {
+                    $isValid = true;
+                    break;
+                }
+            }
+    
+            if (!$isValid || !file_exists($imagePath)) {
+                http_response_code(404);
+                echo json_encode(['error' => '图片不存在或无权访问']);
+                exit;
+            }
+    
+            // 生成并输出缩略图
+            generateThumbnail($imagePath);
+            exit;
+
         case 'getImages':
             handleGetImages();
             break;
