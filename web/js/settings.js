@@ -1,179 +1,242 @@
 /**
- * 设置功能模块
- * 负责配置管理和用户设置
+ * 设置模块
+ * 负责配置的加载、编辑和保存
  */
-export default class Settings {
-    constructor(gallery) {
-        // 保存相册实例引用
-        this.gallery = gallery;
+function initSettings(initialSettings) {
+    // 设置状态
+    let settings = { ...initialSettings };
+
+    // DOM元素
+    const elements = {
+        settingsForm: document.getElementById('settingsForm'),
+        imagePathInput: document.getElementById('imagePath'),
+        addPathBtn: document.getElementById('addPathBtn'),
+        pathList: document.getElementById('pathList'),
+        scanSubfolders: document.getElementById('scanSubfolders'),
+        maxDepth: document.getElementById('maxDepth'),
+        imagesPerRow: document.getElementById('imagesPerRow'),
+        imagesPerRowValue: document.getElementById('imagesPerRowValue'),
+        cacheTTL: document.getElementById('cacheTTL'),
+        port: document.getElementById('port'),
+        resetSettingsBtn: document.getElementById('resetSettingsBtn')
+    };
+
+    /**
+     * 渲染路径列表
+     */
+    function renderPathList() {
+        elements.pathList.innerHTML = '';
         
-        this.elements = this.initElements();
+        if (!settings.imagePaths || settings.imagePaths.length === 0) {
+            elements.pathList.innerHTML = '<p class="empty-path-list">没有添加图片文件夹路径</p>';
+            return;
+        }
         
-        // 绑定事件处理函数
-        this.openSettingsModal = this.openSettingsModal.bind(this);
-        this.closeSettingsModal = this.closeSettingsModal.bind(this);
-        this.handleSettingsSubmit = this.handleSettingsSubmit.bind(this);
+        settings.imagePaths.forEach((path, index) => {
+            const pathItem = document.createElement('div');
+            pathItem.className = 'path-item';
+            pathItem.innerHTML = `
+                <span>${escapeHtml(path)}</span>
+                <button class="path-item-remove" data-index="${index}">&times;</button>
+            `;
+            elements.pathList.appendChild(pathItem);
+        });
         
-        this.initEventListeners();
-    }
-
-    initElements() {
-        return {
-            settingsBtn: document.getElementById('settingsBtn'),
-            settingsModal: document.getElementById('settingsModal'),
-            settingsForm: document.getElementById('settingsForm'),
-            closeSettingsBtn: document.getElementById('closeSettingsBtn'),
-            cancelSettingsBtn: document.getElementById('cancelSettingsBtn'),
-            imageFolder: document.getElementById('imageFolder'),
-            scanSubfolders: document.getElementById('scanSubfolders'),
-            maxDepth: document.getElementById('maxDepth'),
-            imagesPerRow: document.getElementById('imagesPerRow'),
-            cacheDuration: document.getElementById('cacheDuration')
-        };
-    }
-
-    initEventListeners() {
-        // 设置按钮点击事件
-        if (this.elements.settingsBtn) {
-            this.elements.settingsBtn.addEventListener('click', this.openSettingsModal);
-        } else {
-            console.warn('settingsBtn元素不存在');
-        }
-
-        // 关闭设置按钮事件
-        if (this.elements.closeSettingsBtn) {
-            this.elements.closeSettingsBtn.addEventListener('click', this.closeSettingsModal);
-        }
-        if (this.elements.cancelSettingsBtn) {
-            this.elements.cancelSettingsBtn.addEventListener('click', this.closeSettingsModal);
-        }
-
-        // 设置表单提交事件
-        if (this.elements.settingsForm) {
-            this.elements.settingsForm.addEventListener('submit', this.handleSettingsSubmit);
-        }
-
-        // 点击模态框背景关闭
-        if (this.elements.settingsModal) {
-            this.elements.settingsModal.addEventListener('click', (e) => {
-                if (e.target === this.elements.settingsModal) {
-                    this.closeSettingsModal();
-                }
+        // 添加删除事件监听
+        document.querySelectorAll('.path-item-remove').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                const index = parseInt(e.currentTarget.getAttribute('data-index'));
+                removePath(index);
             });
-        }
-
-        // ESC键关闭设置模态框
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && this.elements.settingsModal && 
-                !this.elements.settingsModal.classList.contains('hidden')) {
-                this.closeSettingsModal();
-            }
         });
     }
 
-    // 打开设置模态框
-    openSettingsModal() {
-        // 显示加载状态
-        this.gallery.showLoading();
+    /**
+     * 添加图片路径
+     * @param {string} path - 要添加的路径
+     */
+    function addPath(path) {
+        if (!path || path.trim() === '') return;
         
-        fetch('/api/config')
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`加载设置失败: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(settings => {
-                // 填充表单数据
-                if (this.elements.imageFolder) {
-                    this.elements.imageFolder.value = settings.image_folder || '';
-                }
-                if (this.elements.scanSubfolders) {
-                    this.elements.scanSubfolders.checked = settings.scan_subfolders === 'true';
-                }
-                if (this.elements.maxDepth) {
-                    this.elements.maxDepth.value = settings.max_depth || 0;
-                }
-                if (this.elements.imagesPerRow) {
-                    this.elements.imagesPerRow.value = settings.images_per_row || 5;
-                }
-                if (this.elements.cacheDuration) {
-                    this.elements.cacheDuration.value = settings.cache_duration || 600;
-                }
-                
-                // 显示模态框
-                if (this.elements.settingsModal) {
-                    this.elements.settingsModal.classList.remove('hidden');
-                    document.body.style.overflow = 'hidden';
-                }
-            })
-            .catch(error => {
-                console.error('加载设置失败:', error);
-                this.gallery.showErrorState('加载设置失败: ' + error.message);
-            })
-            .finally(() => {
-                // 隐藏加载状态
-                this.gallery.hideLoading();
-            });
+        const trimmedPath = path.trim();
+        
+        // 检查路径是否已存在
+        if (settings.imagePaths && settings.imagePaths.includes(trimmedPath)) {
+            if (window.app && window.app.showNotification) {
+                window.app.showNotification('该路径已存在', 'info');
+            }
+            return;
+        }
+        
+        // 初始化数组（如果不存在）
+        if (!settings.imagePaths) {
+            settings.imagePaths = [];
+        }
+        
+        // 添加路径并重新渲染
+        settings.imagePaths.push(trimmedPath);
+        renderPathList();
+        elements.imagePathInput.value = '';
     }
 
-    // 关闭设置模态框
-    closeSettingsModal() {
-        if (this.elements.settingsModal) {
-            this.elements.settingsModal.classList.add('hidden');
-            document.body.style.overflow = '';
+    /**
+     * 移除图片路径
+     * @param {number} index - 要移除的路径索引
+     */
+    function removePath(index) {
+        if (settings.imagePaths && index >= 0 && index < settings.imagePaths.length) {
+            settings.imagePaths.splice(index, 1);
+            renderPathList();
         }
     }
 
-    // 处理设置提交
-    handleSettingsSubmit(e) {
-        e.preventDefault();
-        if (this.gallery.state.isLoading) return;
+    /**
+     * 保存设置
+     */
+    async function saveSettings() {
+        if (window.app && window.app.showLoader) {
+            window.app.showLoader();
+        }
 
-        // 收集表单数据
-        const formData = {
-            image_folder: this.elements.imageFolder ? this.elements.imageFolder.value : '',
-            scan_subfolders: this.elements.scanSubfolders ? this.elements.scanSubfolders.checked : false,
-            max_depth: this.elements.maxDepth ? this.elements.maxDepth.value : 0,
-            images_per_row: this.elements.imagesPerRow ? this.elements.imagesPerRow.value : 5,
-            cache_duration: this.elements.cacheDuration ? this.elements.cacheDuration.value : 600
-        };
+        try {
+            // 从表单更新设置
+            settings.scanSubfolders = elements.scanSubfolders.checked;
+            settings.maxDepth = parseInt(elements.maxDepth.value) || 0;
+            settings.imagesPerRow = parseInt(elements.imagesPerRow.value) || 4;
+            settings.cacheTTL = parseInt(elements.cacheTTL.value) || 3600;
+            settings.port = parseInt(elements.port.value) || 8080;
 
-        // 显示加载状态
-        this.gallery.showLoading();
-        
-        fetch('/api/config', {
-            method: 'POST',
-            headers: { 
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formData)
-        })
-        .then(response => {
+            // 验证设置
+            if (!settings.imagePaths || settings.imagePaths.length === 0) {
+                if (window.app && window.app.showNotification) {
+                    window.app.showNotification('请至少添加一个图片文件夹路径', 'error');
+                }
+                return false;
+            }
+
+            // 发送到服务器保存
+            const response = await fetch('index.php?action=saveSettings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            });
+
+            const result = await response.json();
+
             if (!response.ok) {
-                throw new Error(`保存设置失败: ${response.status}`);
+                throw new Error(result.error || '保存设置失败');
             }
-            return response.json();
-        })
-        .then(data => {
-            if (data.status === 'success') {
-                // 关闭模态框
-                this.closeSettingsModal();
-                
-                // 重置到第一页并刷新图片
-                this.gallery.state.currentPage = 1;
-                return this.gallery.loadImages(true);
-            } else {
-                throw new Error('保存设置失败');
+
+            // 触发设置已保存事件
+            const event = new CustomEvent('settingsSaved', { detail: settings });
+            document.dispatchEvent(event);
+
+            return true;
+        } catch (error) {
+            console.error('保存设置错误:', error);
+            if (window.app && window.app.showNotification) {
+                window.app.showNotification('保存设置失败: ' + error.message, 'error');
             }
-        })
-        .catch(error => {
-            console.error('保存设置失败:', error);
-            this.gallery.showErrorState('保存设置失败: ' + error.message);
-        })
-        .finally(() => {
-            // 隐藏加载状态
-            this.gallery.hideLoading();
-        });
+            return false;
+        } finally {
+            if (window.app && window.app.hideLoader) {
+                window.app.hideLoader();
+            }
+        }
     }
+
+    /**
+     * 重置设置为默认值
+     */
+    function resetSettings() {
+        if (confirm('确定要重置所有设置为默认值吗？')) {
+            // 获取默认设置
+            fetch('index.php?action=getSettings')
+                .then(response => response.json())
+                .then(defaultSettings => {
+                    settings = { ...defaultSettings };
+                    loadSettingsIntoForm();
+                    renderPathList();
+                    
+                    if (window.app && window.app.showNotification) {
+                        window.app.showNotification('设置已重置为默认值', 'info');
+                    }
+                })
+                .catch(error => {
+                    console.error('重置设置错误:', error);
+                    if (window.app && window.app.showNotification) {
+                        window.app.showNotification('重置设置失败: ' + error.message, 'error');
+                    }
+                });
+        }
+    }
+
+    /**
+     * 将设置加载到表单中
+     */
+    function loadSettingsIntoForm() {
+        elements.scanSubfolders.checked = settings.scanSubfolders || false;
+        elements.maxDepth.value = settings.maxDepth || 0;
+        elements.imagesPerRow.value = settings.imagesPerRow || 4;
+        elements.imagesPerRowValue.textContent = settings.imagesPerRow || 4;
+        elements.cacheTTL.value = settings.cacheTTL || 3600;
+        elements.port.value = settings.port || 8080;
+    }
+
+    /**
+     * HTML转义，防止XSS攻击
+     * @param {string} str - 需要转义的字符串
+     * @returns {string} 转义后的字符串
+     */
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    /**
+     * 设置事件监听器
+     */
+    function setupEventListeners() {
+        // 添加路径按钮
+        elements.addPathBtn.addEventListener('click', () => {
+            addPath(elements.imagePathInput.value);
+        });
+
+        // 输入框回车添加路径
+        elements.imagePathInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                addPath(elements.imagePathInput.value);
+            }
+        });
+
+        // 图片每行数量滑块
+        elements.imagesPerRow.addEventListener('input', (e) => {
+            elements.imagesPerRowValue.textContent = e.target.value;
+        });
+
+        // 表单提交
+        elements.settingsForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            saveSettings();
+        });
+
+        // 重置按钮
+        elements.resetSettingsBtn.addEventListener('click', resetSettings);
+    }
+
+    // 初始化
+    loadSettingsIntoForm();
+    renderPathList();
+    setupEventListeners();
+
+    // 暴露方法供其他模块使用
+    window.getSettings = () => ({ ...settings });
 }
