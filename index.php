@@ -4,8 +4,17 @@
  * 处理图片扫描、配置管理和缓存操作
  */
 
-// 确保输出为JSON格式
-header('Content-Type: application/json; charset=utf-8');
+// 先判断是否是默认首页请求（无任何参数）
+$isDefaultRequest = empty($_GET) && 
+                   ($_SERVER['REQUEST_URI'] === '/' || 
+                    $_SERVER['REQUEST_URI'] === '/index.php');
+
+// 根据请求类型设置正确的Content-Type
+if ($isDefaultRequest) {
+    header('Content-Type: text/html; charset=utf-8');
+} else {
+    header('Content-Type: application/json; charset=utf-8');
+}
 
 // 处理跨域请求
 header('Access-Control-Allow-Origin: *');
@@ -19,7 +28,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 }
 
 // 获取请求操作，默认为显示首页
-$action = $_GET['action'] ?? 'default';
+$action = $_GET['action'] ?? ($isDefaultRequest ? 'default' : 'invalid');
 
 // 数据库和配置初始化
 $configFile = 'config.json';
@@ -50,15 +59,12 @@ init();
  * 初始化函数，路由请求到相应的处理函数
  */
 function init() {
-    global $configFile, $defaultConfig;
+    global $configFile, $defaultConfig, $action;
     
     // 确保配置文件存在
     if (!file_exists($configFile)) {
         saveConfig($defaultConfig);
     }
-    
-    // 获取请求动作
-    $action = $_GET['action'] ?? '';
     
     // 路由到相应的处理函数
     switch ($action) {
@@ -75,9 +81,9 @@ function init() {
             handleRefreshCache();
             break;
         case 'default':
-            // 新增：处理默认请求，返回前端页面
+            // 处理默认请求，返回前端页面
             if (file_exists('index.html')) {
-                            // 切换到HTML内容类型
+                // 确保内容类型正确
                 header('Content-Type: text/html; charset=utf-8');
                 readfile('index.html');
             } else {
@@ -125,7 +131,8 @@ function handleGetImages() {
  * 处理获取设置的请求
  */
 function handleGetSettings() {
-    $config = loadConfig();
+    global $configFile;
+    $config = loadConfig($configFile);
     echo json_encode($config);
 }
 
@@ -133,6 +140,8 @@ function handleGetSettings() {
  * 处理保存设置的请求
  */
 function handleSaveSettings() {
+    global $configFile;
+    
     // 确保是POST请求
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
         http_response_code(405);
@@ -188,7 +197,7 @@ function handleRefreshCache() {
 function getImages($search = '', $sort = 'name_asc') {
     global $cacheDir, $configFile;
     
-    $config = loadConfig();
+    $config = loadConfig($configFile);
     $cacheKey = 'images_' . md5(json_encode($config) . $search . $sort);
     $cacheFile = $cacheDir . $cacheKey . '.json';
     
@@ -340,14 +349,7 @@ function sortImages($images, $sort) {
  * 加载配置
  */
 function loadConfig($file) {
-    $defaultConfig = [
-        'imagePaths' => [],
-        'scanSubfolders' => true,
-        'maxDepth' => 0,
-        'imagesPerRow' => 4,
-        'cacheTTL' => 3600,
-        'port' => 8080
-    ];
+    global $defaultConfig;
     
     if (!file_exists($file)) {
         file_put_contents($file, json_encode($defaultConfig, JSON_PRETTY_PRINT));
@@ -358,6 +360,7 @@ function loadConfig($file) {
     return $config ? array_merge($defaultConfig, $config) : $defaultConfig;
 }
 
+// 正确调用loadConfig并传递参数
 $config = loadConfig($configFile);
 
 
@@ -403,3 +406,4 @@ function formatSize($bytes, $decimals = 2) {
     return round($bytes / (1024 ** $pow), $decimals) . ' ' . $units[$pow];
 }
 ?>
+    
