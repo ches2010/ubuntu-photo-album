@@ -13,7 +13,11 @@ $isDefaultRequest = empty($_GET) &&
 if ($isDefaultRequest) {
     header('Content-Type: text/html; charset=utf-8');
 } else {
-    header('Content-Type: application/json; charset=utf-8');
+    // 缩略图和原图请求需要特殊的Content-Type
+    $action = $_GET['action'] ?? '';
+    if ($action !== 'getThumbnail' && $action !== 'getImage') {
+        header('Content-Type: application/json; charset=utf-8');
+    }
 }
 
 // 处理跨域请求
@@ -46,7 +50,9 @@ $defaultConfig = [
     'maxDepth' => 0,
     'imagesPerRow' => 4,
     'cacheTTL' => 3600,
-    'port' => 8080
+    'port' => 8080,
+    'thumbnailWidth' => 200,
+    'thumbnailHeight' => 150
 ];
 
 // 支持的图片扩展名
@@ -69,33 +75,13 @@ function init() {
     // 路由到相应的处理函数
     switch ($action) {
         case 'getThumbnail':
-            if (!isset($_GET['path'])) {
-                http_response_code(400);
-                echo json_encode(['error' => '缺少图片路径参数']);
-                exit;
-            }
-    
-            $imagePath = urldecode($_GET['path']);
-            $settings = loadSettings();
-    
-            // 验证图片路径是否在配置的目录中（安全检查）
-            $isValid = false;
-            foreach ($settings['imagePaths'] as $allowedPath) {
-                if (strpos($imagePath, $allowedPath) === 0) {
-                    $isValid = true;
-                    break;
-                }
-            }
-    
-            if (!$isValid || !file_exists($imagePath)) {
-                http_response_code(404);
-                echo json_encode(['error' => '图片不存在或无权访问']);
-                exit;
-            }
-    
-            // 生成并输出缩略图
-            generateThumbnail($imagePath);
-            exit;
+            handleGetThumbnail();
+            break;
+        case 'getImage':
+            handleGetImage();
+            break;
+        case 'getBase64Image':
+            handleGetBase64Image();
             break;
         case 'getImages':
             handleGetImages();
@@ -125,6 +111,147 @@ function init() {
             echo json_encode(['error' => '无效的请求动作']);
             break;
     }
+}
+
+/**
+ * 处理获取缩略图的请求
+ */
+function handleGetThumbnail() {
+    if (!isset($_GET['path'])) {
+        http_response_code(400);
+        echo json_encode(['error' => '缺少图片路径参数']);
+        exit;
+    }
+
+    $imagePath = urldecode($_GET['path']);
+    $settings = loadSettings();
+    
+    // 验证图片路径是否在配置的目录中（安全检查）
+    $isValid = false;
+    foreach ($settings['imagePaths'] as $allowedPath) {
+        // 构建完整路径进行验证
+        $fullAllowedPath = rtrim($allowedPath, '/') . '/';
+        $fullImagePath = realpath($imagePath);
+        
+        if ($fullImagePath && strpos($fullImagePath, $fullAllowedPath) === 0) {
+            $isValid = true;
+            break;
+        }
+    }
+
+    if (!$isValid || !file_exists($imagePath) || !is_readable($imagePath)) {
+        http_response_code(404);
+        echo json_encode(['error' => '图片不存在或无权访问']);
+        exit;
+    }
+
+    // 获取配置的缩略图尺寸
+    $width = isset($settings['thumbnailWidth']) ? (int)$settings['thumbnailWidth'] : 200;
+    $height = isset($settings['thumbnailHeight']) ? (int)$settings['thumbnailHeight'] : 150;
+    
+    // 生成并输出缩略图
+    generateThumbnail($imagePath, $width, $height);
+    exit;
+}
+
+/**
+ * 处理获取原图的请求
+ */
+function handleGetImage() {
+    if (!isset($_GET['path'])) {
+        http_response_code(400);
+        echo json_encode(['error' => '缺少图片路径参数']);
+        exit;
+    }
+    
+    $imagePath = urldecode($_GET['path']);
+    $settings = loadSettings();
+    
+    // 验证图片路径是否在配置的目录中（安全检查）
+    $isValid = false;
+    foreach ($settings['imagePaths'] as $allowedPath) {
+        $fullAllowedPath = rtrim($allowedPath, '/') . '/';
+        $fullImagePath = realpath($imagePath);
+        
+        if ($fullImagePath && strpos($fullImagePath, $fullAllowedPath) === 0) {
+            $isValid = true;
+            break;
+        }
+    }
+    
+    if (!$isValid || !file_exists($imagePath) || !is_readable($imagePath)) {
+        http_response_code(404);
+        echo json_encode(['error' => '图片不存在或无权访问']);
+        exit;
+    }
+    
+    // 输出原图
+    $mimeType = mime_content_type($imagePath);
+    header("Content-Type: $mimeType");
+    header("Content-Length: " . filesize($imagePath));
+    readfile($imagePath);
+    exit;
+}
+
+/**
+ * 处理获取Base64编码图片的请求
+ */
+function handleGetBase64Image() {
+    if (!isset($_GET['path'])) {
+        http_response_code(400);
+        echo json_encode(['error' => '缺少图片路径参数']);
+        exit;
+    }
+    
+    $imagePath = urldecode($_GET['path']);
+    $settings = loadSettings();
+    
+    // 验证图片路径（安全检查）
+    $isValid = false;
+    foreach ($settings['imagePaths'] as $allowedPath) {
+        $fullAllowedPath = rtrim($allowedPath, '/') . '/';
+        $fullImagePath = realpath($imagePath);
+        
+        if ($fullImagePath && strpos($fullImagePath, $fullAllowedPath) === 0) {
+            $isValid = true;
+            break;
+        }
+    }
+    
+    if (!$isValid || !file_exists($imagePath) || !is_readable($imagePath)) {
+        http_response_code(404);
+        echo json_encode(['error' => '图片不存在或无权访问']);
+        exit;
+    }
+    
+    // 获取图片MIME类型
+    $mimeType = mime_content_type($imagePath);
+    
+    // 检查是否是支持的图片类型
+    $supportedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!in_array($mimeType, $supportedTypes)) {
+        http_response_code(415);
+        echo json_encode(['error' => '不支持的图片类型']);
+        exit;
+    }
+    
+    // 读取图片内容并转换为Base64
+    $imageData = file_get_contents($imagePath);
+    if ($imageData === false) {
+        http_response_code(500);
+        echo json_encode(['error' => '无法读取图片内容']);
+        exit;
+    }
+    
+    $base64 = base64_encode($imageData);
+    
+    // 返回结果
+    echo json_encode([
+        'mimeType' => $mimeType,
+        'base64' => $base64,
+        'size' => filesize($imagePath)
+    ]);
+    exit;
 }
 
 /**
@@ -194,7 +321,9 @@ function handleSaveSettings() {
         'maxDepth' => isset($data['maxDepth']) ? max(0, (int)$data['maxDepth']) : 0,
         'imagesPerRow' => isset($data['imagesPerRow']) ? max(1, min(10, (int)$data['imagesPerRow'])) : 4,
         'cacheTTL' => isset($data['cacheTTL']) ? max(0, (int)$data['cacheTTL']) : 3600,
-        'port' => isset($data['port']) ? max(1, min(65535, (int)$data['port'])) : 8080
+        'port' => isset($data['port']) ? max(1, min(65535, (int)$data['port'])) : 8080,
+        'thumbnailWidth' => isset($data['thumbnailWidth']) ? max(50, min(1000, (int)$data['thumbnailWidth'])) : 200,
+        'thumbnailHeight' => isset($data['thumbnailHeight']) ? max(50, min(1000, (int)$data['thumbnailHeight'])) : 150
     ];
     
     // 保存配置
@@ -339,7 +468,10 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
                     'modifiedFormatted' => date('Y-m-d H:i:s', $modified),
                     'width' => $width,
                     'height' => $height,
-                    'extension' => $ext
+                    'extension' => $ext,
+                    'thumbnailUrl' => 'index.php?action=getThumbnail&path=' . urlencode($relativePath),
+                    'imageUrl' => 'index.php?action=getImage&path=' . urlencode($relativePath),
+                    'base64Url' => 'index.php?action=getBase64Image&path=' . urlencode($relativePath)
                 ];
             }
         }
@@ -389,9 +521,13 @@ function loadConfig($file) {
     return $config ? array_merge($defaultConfig, $config) : $defaultConfig;
 }
 
-// 正确调用loadConfig并传递参数
-$config = loadConfig($configFile);
-
+/**
+ * 加载设置（用于缩略图等功能）
+ */
+function loadSettings() {
+    global $configFile;
+    return loadConfig($configFile);
+}
 
 /**
  * 保存配置
@@ -434,5 +570,103 @@ function formatSize($bytes, $decimals = 2) {
     
     return round($bytes / (1024 ** $pow), $decimals) . ' ' . $units[$pow];
 }
-?>
+
+/**
+ * 生成并输出图片缩略图
+ * @param string $imagePath 原始图片路径
+ * @param int $width 缩略图宽度
+ * @param int $height 缩略图高度
+ */
+function generateThumbnail($imagePath, $width = 200, $height = 150) {
+    // 获取图片信息
+    $info = getimagesize($imagePath);
+    if (!$info) {
+        http_response_code(415);
+        echo json_encode(['error' => '无法识别的图片格式']);
+        exit;
+    }
     
+    $mime = $info['mime'];
+    
+    // 根据图片类型创建原图资源
+    switch ($mime) {
+        case 'image/jpeg':
+            $source = imagecreatefromjpeg($imagePath);
+            break;
+        case 'image/png':
+            $source = imagecreatefrompng($imagePath);
+            break;
+        case 'image/gif':
+            $source = imagecreatefromgif($imagePath);
+            break;
+        case 'image/webp':
+            $source = imagecreatefromwebp($imagePath);
+            break;
+        default:
+            http_response_code(415);
+            echo json_encode(['error' => '不支持的图片类型: ' . $mime]);
+            exit;
+    }
+    
+    if (!$source) {
+        http_response_code(500);
+        echo json_encode(['error' => '无法处理图片']);
+        exit;
+    }
+    
+    // 获取原图尺寸
+    $sourceWidth = imagesx($source);
+    $sourceHeight = imagesy($source);
+    
+    // 计算缩略图尺寸（保持比例）
+    $ratio = min($width / $sourceWidth, $height / $sourceHeight);
+    $thumbnailWidth = (int)($sourceWidth * $ratio);
+    $thumbnailHeight = (int)($sourceHeight * $ratio);
+    
+    // 创建缩略图资源
+    $thumbnail = imagecreatetruecolor($thumbnailWidth, $thumbnailHeight);
+    
+    // 处理透明背景（针对PNG和GIF）
+    if ($mime == 'image/png' || $mime == 'image/gif' || $mime == 'image/webp') {
+        imagecolortransparent($thumbnail, imagecolorallocatealpha($thumbnail, 0, 0, 0, 127));
+        imagesavealpha($thumbnail, true);
+    }
+    
+    // 生成缩略图
+    $success = imagecopyresampled(
+        $thumbnail, $source,
+        0, 0, 0, 0,
+        $thumbnailWidth, $thumbnailHeight,
+        $sourceWidth, $sourceHeight
+    );
+    
+    if (!$success) {
+        http_response_code(500);
+        echo json_encode(['error' => '生成缩略图失败']);
+        imagedestroy($source);
+        imagedestroy($thumbnail);
+        exit;
+    }
+    
+    // 输出缩略图
+    header("Content-Type: $mime");
+    switch ($mime) {
+        case 'image/jpeg':
+            imagejpeg($thumbnail, null, 80); // 80% 质量
+            break;
+        case 'image/png':
+            imagepng($thumbnail);
+            break;
+        case 'image/gif':
+            imagegif($thumbnail);
+            break;
+        case 'image/webp':
+            imagewebp($thumbnail, null, 80); // 80% 质量
+            break;
+    }
+    
+    // 释放资源
+    imagedestroy($source);
+    imagedestroy($thumbnail);
+}
+?>
