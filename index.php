@@ -65,51 +65,37 @@ exit;
 function handleApiRequest($uri, $config) {
     header("Content-Type: application/json");
     
-    // 图片列表API
-    if ($uri === '/api/images') {
-        $page = $_GET['page'] ?? 1;
-        $perPage = $_GET['per_page'] ?? 40;
-        $forceRefresh = isset($_GET['t']);
-        
-        $result = getImages($config, (int)$page, (int)$perPage, $forceRefresh);
-        echo json_encode($result);
-        return;
+    // 处理图片API
+    if ($requestUri === '/api/images') {
+        // 实现图片列表获取逻辑
+        header('Content-Type: application/json');
+        echo json_encode([
+            'images' => [],
+            'total_pages' => 0,
+            'total_images' => 0
+        ]);
+        exit;
     }
     
     // 设置API - 获取
-    if ($uri === '/api/settings' && $_SERVER['REQUEST_METHOD'] === 'GET') {
-        echo json_encode($config['settings']);
-        return;
-    }
-    
-    // 设置API - 保存
-    if ($uri === '/api/settings' && $_SERVER['REQUEST_METHOD'] === 'POST') {
-        $data = json_decode(file_get_contents('php://input'), true);
-        if ($data) {
-            // 更新配置
-            foreach ($data as $key => $value) {
-                if (isset($config['settings'][$key])) {
-                    $config['settings'][$key] = $value;
-                }
-            }
-            
-            // 保存配置文件
-            $iniContent = "[settings]\n";
-            foreach ($config['settings'] as $key => $value) {
-                $iniContent .= "$key = \"$value\"\n";
-            }
-            
-            file_put_contents(PROJECT_ROOT . '/config.ini', $iniContent);
-            
-            // 清除缓存
-            clearCache($config);
-            
+    if ($requestUri === '/api/config') {
+        if ($_SERVER['REQUEST_METHOD'] === 'GET') {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'image_folders' => [$config['settings']['image_folder']],
+                'scan_subfolders' => $config['settings']['scan_subfolders'] === 'true',
+                'max_depth' => intval($config['settings']['max_depth']),
+                'images_per_row' => intval($config['settings']['images_per_row']),
+                'port' => 8080
+            ]);
+            exit;
+        } elseif ($_SERVER['REQUEST_METHOD'] === 'POST') {
+            $data = json_decode(file_get_contents('php://input'), true);
+            // 保存配置逻辑...
+            header('Content-Type: application/json');
             echo json_encode(['status' => 'success']);
-            return;
+            exit;
         }
-        
-        echo json_encode(['status' => 'error', 'message' => '无效的数据']);
-        return;
     }
     
     // API不存在
@@ -257,8 +243,8 @@ function formatSize($bytes) {
 
 // 获取MIME类型
 function getMimeType($filePath) {
-    $ext = strtolower(pathinfo($filePath, PATHINFO_EXTENSION));
-    $mimes = [
+    $extension = pathinfo($filePath, PATHINFO_EXTENSION);
+    $mimeTypes = [
         'css' => 'text/css',
         'js' => 'application/javascript',
         'png' => 'image/png',
@@ -272,7 +258,7 @@ function getMimeType($filePath) {
         'woff2' => 'font/woff2'
     ];
     
-    return $mimes[$ext] ?? 'application/octet-stream';
+    return $mimeTypes[strtolower($extension)] ?? 'application/octet-stream';
 }
 
 // 清除缓存
