@@ -24,8 +24,23 @@ document.addEventListener('DOMContentLoaded', function() {
     // 绑定按钮事件
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function() {
-            console.log('刷新按钮被点击');
+            console.log('刷新按钮被点击，开始强制刷新图片');
+            // 添加按钮加载状态
+            this.disabled = true;
+            this.innerHTML = '🔄 刷新中...';
+
+            // 调用加载图片函数，强制刷新缓存
             loadImages(true);
+                .then(() => {
+                    // 恢复按钮状态
+                    this.disabled = false;
+                    this.innerHTML = '🔄 刷新';
+                })
+                .catch(() => {
+                    // 即使失败也恢复按钮状态
+                    this.disabled = false;
+                    this.innerHTML = '🔄 刷新';
+                });
         });
     } else {
         console.error('未找到刷新按钮元素');
@@ -106,41 +121,52 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 加载图片列表
     function loadImages(forceRefresh = false) {
-        showLoading();
-        hideEmptyState();
-        hideErrorState();
+        return new Promise((resolve, reject) => {
+            showLoading();
+            hideEmptyState();
+            hideErrorState();
         
-        let url = `/api/images?page=${state.currentPage}&per_page=${state.perPage}`;
-        if (forceRefresh) {
-            url += `&t=${new Date().getTime()}`;
-        }
+            let url = `/api/images?page=${state.currentPage}&per_page=${state.perPage}`;
+            if (forceRefresh) {
+                url += `&t=${new Date().getTime()}`;
+                console.log('强制刷新，添加时间戳参数');
+            }
         
-        fetch(url)
-            .then(response => {
-                if (!response.ok) {
-                    throw new Error(`HTTP错误: ${response.status}`);
-                }
-                return response.json();
-            })
-            .then(data => {
-                state.totalPages = data.total_pages;
-                state.totalImages = data.total_images;
-                state.imagesPerRow = data.images_per_row;
+            fetch(url)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP错误: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(data => {
+                    // 检查返回数据是否有效
+                    if (!data || typeof data !== 'object') {
+                        throw new Error('无效的图片数据格式');
+                    }
+                    
+                    state.totalPages = data.total_pages || 0;
+                    state.totalImages = data.total_images || 0;
+                    state.imagesPerRow = data.images_per_row || 5;
                 
-                updateImageGrid(data.images);
-                updatePagination();
-                updateGridColumns();
-                hideLoading();
+                    updateImageGrid(data.images || []);
+                    updatePagination();
+                    updateGridColumns();
+                    hideLoading();
                 
-                if (state.totalImages === 0) {
-                    showEmptyState();
-                }
-            })
-            .catch(error => {
-                console.error('加载图片失败:', error);
-                hideLoading();
-                showErrorState(error.message);
-            });
+                    if (state.totalImages === 0) {
+                        showEmptyState();
+                    }
+
+                    resolve(); // 成功完成
+                })
+                .catch(error => {
+                    console.error('加载图片失败:', error);
+                    hideLoading();
+                    showErrorState(error.message);
+                    reject(error); // 传递错误
+                });
+        });
     }
 
     // 更新图片网格
@@ -276,7 +302,13 @@ document.addEventListener('DOMContentLoaded', function() {
             images_per_row: document.getElementById('imagesPerRow').value,
             cache_duration: document.getElementById('cacheDuration').value
         };
-        
+
+        // 显示保存中状态
+        const saveButton = settingsForm.querySelector('button[type="submit"]');
+        const originalText = saveButton.innerHTML;
+        saveButton.disabled = true;
+        saveButton.innerHTML = '保存中...';
+                
         fetch('/api/config', {
             method: 'POST',
             headers: {
@@ -289,13 +321,22 @@ document.addEventListener('DOMContentLoaded', function() {
             return response.json();
         })
         .then(data => {
-            alert('设置已保存');
+            alert('设置已保存，正在刷新图片...');
             closeSettingsModal();
-            loadImages(true); // 重新加载图片
+            // 保存成功后强制刷新图片
+            loadImages(true).then(() => {
+                // 恢复按钮状态
+                saveButton.disabled = false;
+                saveButton.innerHTML = originalText;
+            });
         })
+                
         .catch(error => {
             console.error('保存设置失败:', error);
-            alert('保存设置失败，请稍后重试');
+            alert('保存设置失败: ' + error.message);
+            // 恢复按钮状态
+            saveButton.disabled = false;
+            saveButton.innerHTML = originalText;
         });
     }
 
