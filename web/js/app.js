@@ -9,7 +9,7 @@ document.addEventListener('DOMContentLoaded', function() {
         imagesPerRow: 5
     };
 
-    // 获取DOM元素并绑定事件（使用更可靠的获取方式）
+    // 获取DOM元素并绑定事件
     const refreshBtn = document.getElementById('refreshBtn');
     const settingsBtn = document.getElementById('settingsBtn');
     const prevPageBtn = document.getElementById('prevPage');
@@ -21,10 +21,10 @@ document.addEventListener('DOMContentLoaded', function() {
     const imageModal = document.getElementById('imageModal');
     const closeModalBtn = document.getElementById('closeModal');
 
-    // 绑定按钮事件（增加存在性检查）
+    // 绑定按钮事件
     if (refreshBtn) {
         refreshBtn.addEventListener('click', function() {
-            console.log('刷新按钮被点击'); // 调试日志
+            console.log('刷新按钮被点击');
             loadImages(true);
         });
     } else {
@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (settingsBtn) {
         settingsBtn.addEventListener('click', function() {
-            console.log('设置按钮被点击'); // 调试日志
+            console.log('设置按钮被点击');
             openSettingsModal();
         });
     } else {
@@ -229,8 +229,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // 打开设置模态框
     function openSettingsModal() {
-        fetch('/api/settings')
-            .then(response => response.json())
+        fetch('/api/config')
+            .then(response => {
+                if (!response.ok) throw new Error('加载设置失败');
+                return response.json();
+            })
             .then(settings => {
                 const imageFolder = document.getElementById('imageFolder');
                 const scanSubfolders = document.getElementById('scanSubfolders');
@@ -274,68 +277,57 @@ document.addEventListener('DOMContentLoaded', function() {
             cache_duration: document.getElementById('cacheDuration').value
         };
         
-        fetch('/api/settings', {
+        fetch('/api/config', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(settings)
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) throw new Error('保存设置失败');
+            return response.json();
+        })
         .then(data => {
-            if (data.status === 'success') {
-                closeSettingsModal();
-                state.currentPage = 1;
-                loadImages(true);
-                alert('设置已保存');
-            } else {
-                alert('保存失败: ' + (data.message || '未知错误'));
-            }
+            alert('设置已保存');
+            closeSettingsModal();
+            loadImages(true); // 重新加载图片
         })
         .catch(error => {
             console.error('保存设置失败:', error);
-            alert('保存设置时发生错误');
+            alert('保存设置失败，请稍后重试');
         });
     }
 
-    // 显示加载状态
+    // 加载状态显示
     function showLoading() {
-        const loading = document.getElementById('loading');
-        if (loading) loading.classList.remove('hidden');
+        document.getElementById('loading').classList.remove('hidden');
     }
 
-    // 隐藏加载状态
     function hideLoading() {
-        const loading = document.getElementById('loading');
-        if (loading) loading.classList.add('hidden');
+        document.getElementById('loading').classList.add('hidden');
     }
 
-    // 显示空状态
+    // 空状态显示
     function showEmptyState() {
-        const empty = document.getElementById('emptyState');
-        if (empty) empty.classList.remove('hidden');
+        document.getElementById('emptyState').classList.remove('hidden');
     }
 
-    // 隐藏空状态
     function hideEmptyState() {
-        const empty = document.getElementById('emptyState');
-        if (empty) empty.classList.add('hidden');
+        document.getElementById('emptyState').classList.add('hidden');
     }
 
-    // 显示错误状态
+    // 错误状态显示
     function showErrorState(message) {
-        const error = document.getElementById('errorState');
-        const errorMsg = document.getElementById('errorMessage');
-        if (error && errorMsg) {
-            errorMsg.textContent = message || '加载失败';
-            error.classList.remove('hidden');
+        const errorState = document.getElementById('errorState');
+        const errorMessage = document.getElementById('errorMessage');
+        if (errorState && errorMessage) {
+            errorMessage.textContent = message;
+            errorState.classList.remove('hidden');
         }
     }
 
-    // 隐藏错误状态
     function hideErrorState() {
-        const error = document.getElementById('errorState');
-        if (error) error.classList.add('hidden');
+        document.getElementById('errorState').classList.add('hidden');
     }
 });
-    
