@@ -19,7 +19,13 @@ PROJECT_DIR=$(pwd)
 # 安装必要的依赖 - 使用系统支持的PHP版本
 echo "1/5: 安装必要的依赖..."
 apt update
-apt install -y php php-fpm nginx
+apt install -y php php-fpm nginx python3 python3-pip python3-venv
+
+# 安装Python依赖
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+deactivate
 
 # 检查PHP是否安装成功
 if ! command -v php &> /dev/null; then
@@ -35,7 +41,7 @@ chmod -R 755 $PROJECT_DIR
 # 创建缓存目录
 mkdir -p $PROJECT_DIR/cache
 chown -R www-data:www-data $PROJECT_DIR/cache
-chmod 755 $PROJECT_DIR/cache
+chmod 775 $PROJECT_DIR/cache
 
 # 创建默认图片目录
 echo "3/5: 创建默认图片目录..."
@@ -52,6 +58,7 @@ cat > /etc/nginx/sites-available/photo-album <<EOF
 server {
     listen 8080;  # 使用8080端口避免冲突
     server_name _;
+
     root $PROJECT_DIR;
     index index.php;
 
@@ -99,12 +106,14 @@ else
     systemctl enable php-fpm
 fi
 
+# 启动Flask应用
+nohup venv/bin/python3 app.py > app.log 2>&1 &
+
 # 显示完成信息
 IP_ADDR=$(hostname -I | awk '{print $1}')
 echo "=============================================="
 echo "部署完成！"
-echo "您可以通过以下地址访问相册: http://$IP_ADDR:8080"  # 增加端口号
+echo "您可以通过以下地址访问相册: http://$IP_ADDR:8080"
 echo "默认图片目录: /mnt/sda2/www/photos"
 echo "请将图片放入上述目录，或通过设置页面更改路径"
 echo "=============================================="
-    
