@@ -41,18 +41,26 @@ export default class Settings {
         // 确保元素存在再绑定事件
         if (this.elements.settingsBtn) {
             this.elements.settingsBtn.addEventListener('click', this.openSettingsModal);
+        } else {
+            console.warn('未找到settingsBtn元素');
         }
         
         if (this.elements.settingsForm) {
             this.elements.settingsForm.addEventListener('submit', this.handleSettingsSubmit);
+        } else {
+            console.warn('未找到settingsForm元素');
         }
         
         if (this.elements.cancelSettingsBtn) {
             this.elements.cancelSettingsBtn.addEventListener('click', this.closeSettingsModal);
+        } else {
+            console.warn('未找到cancelSettingsBtn元素');
         }
         
         if (this.elements.closeSettingsBtn) {
             this.elements.closeSettingsBtn.addEventListener('click', this.closeSettingsModal);
+        } else {
+            console.warn('未找到closeSettingsBtn元素');
         }
         
         // 点击模态框外部关闭
@@ -181,4 +189,3 @@ export default class Settings {
         });
     }
 }
-    
