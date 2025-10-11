@@ -318,12 +318,15 @@ function initGallery() {
         
         switch (e.key) {
             case 'ArrowLeft':
-                e.preventDefault();
                 showPrevImage();
+                e.preventDefault();
                 break;
             case 'ArrowRight':
-                e.preventDefault();
                 showNextImage();
+                e.preventDefault();                
+                break;
+            case 'Escape':
+                imageModal.hide();
                 break;
             case '+':
             case '=':
