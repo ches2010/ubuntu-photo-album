@@ -2,8 +2,9 @@
 // 定义项目根目录
 define('PROJECT_ROOT', __DIR__);
 define('CACHE_DIR', PROJECT_ROOT . '/cache');
+define('CACHE_DURATION', 600); // 默认缓存时间(秒)
 
-// 确保缓存目录存在
+// 确保缓存目录存在并设置正确权限
 if (!is_dir(CACHE_DIR)) {
     mkdir(CACHE_DIR, 0775, true);
     chmod(CACHE_DIR, 0775);
@@ -17,7 +18,7 @@ $defaultConfig = [
         'scan_subfolders' => 'true',
         'max_depth' => '0',
         'images_per_row' => '5',
-        'cache_duration' => '600',
+        'cache_duration' => (string)CACHE_DURATION,
         'port' => '8080'
     ]
 ];
@@ -30,6 +31,7 @@ if (!file_exists($configFile)) {
 
 $config = json_decode(file_get_contents($configFile), true);
 if (json_last_error() !== JSON_ERROR_NONE) {
+    error_log("配置文件解析错误，使用默认配置: " . json_last_error_msg());
     $config = $defaultConfig;
 }
 
@@ -80,63 +82,73 @@ function handleApiRequest($requestUri, $config) {
         $perPage = isset($_GET['per_page']) ? (int)$_GET['per_page'] : 40;
         $forceRefresh = isset($_GET['t']);
         
+        // 验证分页参数
+        $page = max(1, $page);
+        $perPage = max(10, min(100, $perPage)); // 限制每页数量范围
+        
         $images = getImages($config, $forceRefresh);
         $totalImages = count($images);
-        $totalPages = ceil($totalImages / $perPage);
+        $totalPages = max(1, ceil($totalImages / $perPage));
         $offset = ($page - 1) * $perPage;
         $paginatedImages = array_slice($images, $offset, $perPage);
         
         header('Content-Type: application/json');
         echo json_encode([
             'images' => $paginatedImages,
-            'total_pages' => $totalPages,
             'total_images' => $totalImages,
+            'total_pages' => $totalPages,
             'current_page' => $page,
-            'images_per_row' => (int)$config['settings']['images_per_row']
+            'images_per_row' => $config['settings']['images_per_row']
         ]);
         exit;
     }
     
     // 处理图片访问
     if (preg_match('/^\/images\/(\d+)$/', $requestUri, $matches)) {
+        $imageId = (int)$matches[1];
         $images = getImages($config);
-        $index = (int)$matches[1];
         
-        if (isset($images[$index])) {
-            $imagePath = $images[$index]['path'];
+        if (isset($images[$imageId])) {
+            $imagePath = $images[$imageId]['path'];
             if (file_exists($imagePath)) {
                 $mimeType = getMimeType($imagePath);
                 header("Content-Type: $mimeType");
+                header("Cache-Control: public, max-age=86400"); // 缓存1天
                 readfile($imagePath);
                 exit;
             }
         }
         
+        // 图片未找到
         http_response_code(404);
-        echo json_encode(['error' => '图片不存在']);
+        header('Content-Type: application/json');
+        echo json_encode(['error' => '图片未找到']);
         exit;
     }
 }
 
-// 获取图片列表
+// 获取图片列表（带缓存）
 function getImages($config, $forceRefresh = false) {
-    $cacheFile = CACHE_DIR . '/images_cache.json';
+    $cacheFile = CACHE_DIR . '/images.json';
     $cacheDuration = (int)$config['settings']['cache_duration'];
     
     // 检查缓存是否有效
     if (!$forceRefresh && file_exists($cacheFile) && 
         (time() - filemtime($cacheFile) < $cacheDuration)) {
-        return json_decode(file_get_contents($cacheFile), true);
+        $cached = file_get_contents($cacheFile);
+        return json_decode($cached, true) ?: [];
     }
     
+    // 缓存无效，重新扫描
     $imageFolder = $config['settings']['image_folder'];
     $scanSubfolders = $config['settings']['scan_subfolders'] === 'true';
     $maxDepth = (int)$config['settings']['max_depth'];
     
     $images = [];
-    
     if (is_dir($imageFolder)) {
         $images = scanImages($imageFolder, $imageFolder, 0, $scanSubfolders, $maxDepth);
+    } else {
+        error_log("图片目录不存在: $imageFolder");
     }
     
     // 保存到缓存
@@ -150,7 +162,18 @@ function scanImages($rootDir, $currentDir, $currentDepth, $scanSubfolders, $maxD
     $images = [];
     $allowedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
     
-    $items = scandir($currentDir);
+    // 检查目录是否可访问
+    if (!is_readable($currentDir)) {
+        error_log("无法访问目录: $currentDir");
+        return $images;
+    }
+    
+    $items = @scandir($currentDir); // 使用@抑制错误信息
+    if ($items === false) {
+        error_log("扫描目录失败: $currentDir");
+        return $images;
+    }
+    
     foreach ($items as $item) {
         if ($item == '.' || $item == '..') continue;
         
@@ -171,22 +194,24 @@ function scanImages($rootDir, $currentDir, $currentDepth, $scanSubfolders, $maxD
         } elseif (is_file($path)) {
             $extension = strtolower(pathinfo($path, PATHINFO_EXTENSION));
             if (in_array($extension, $allowedExtensions)) {
-                $stat = stat($path);
-                $size = formatSize($stat['size']);
-                $modified = date('Y-m-d H:i:s', $stat['mtime']);
-                
-                $folder = dirname($relativePath);
-                $folder = $folder == '.' ? '' : $folder;
-                
-                $images[] = [
-                    'id' => count($images),
-                    'filename' => basename($path),
-                    'folder' => $folder,
-                    'path' => $path,
-                    'size' => $size,
-                    'modified' => $modified,
-                    'extension' => $extension
-                ];
+                $stat = @stat($path);
+                if ($stat) {
+                    $size = formatSize($stat['size']);
+                    $modified = date('Y-m-d H:i:s', $stat['mtime']);
+                    
+                    $folder = dirname($relativePath);
+                    $folder = $folder == '.' ? '' : $folder;
+                    
+                    $images[] = [
+                        'id' => count($images),
+                        'filename' => basename($path),
+                        'folder' => $folder,
+                        'path' => $path,
+                        'size' => $size,
+                        'modified' => $modified,
+                        'extension' => $extension
+                    ];
+                }
             }
         }
     }
