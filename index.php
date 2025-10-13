@@ -114,6 +114,50 @@ function init() {
 }
 
 /**
+ * 解析并验证图片路径
+ */
+function resolveImagePath($userPath) {
+    global $configFile;
+    
+    $settings = loadConfig($configFile);
+    $decodedPath = urldecode($userPath);
+    
+    // 标准化路径，处理特殊字符和斜杠
+    $normalizedPath = str_replace(['\\', '//'], '/', $decodedPath);
+    
+    // 尝试解析为绝对路径
+    $fullImagePath = realpath($normalizedPath);
+    
+    // 处理中文等特殊字符编码
+    if (function_exists('mb_convert_encoding')) {
+        $fullImagePath = mb_convert_encoding($fullImagePath, 'UTF-8', 'auto');
+    }
+    
+    // 如果路径不存在，尝试结合文档根目录查找
+    if (!$fullImagePath) {
+        $docRoot = $_SERVER['DOCUMENT_ROOT'] ?? '';
+        $fullImagePath = realpath($docRoot . '/' . $normalizedPath);
+    }
+    
+    // 验证路径是否在允许的目录中
+    foreach ($settings['imagePaths'] as $allowedPath) {
+        $allowedPath = rtrim($allowedPath, '/') . '/';
+        $fullAllowedPath = realpath($allowedPath);
+        
+        if (function_exists('mb_convert_encoding')) {
+            $fullAllowedPath = mb_convert_encoding($fullAllowedPath, 'UTF-8', 'auto');
+        }
+        
+        if ($fullAllowedPath && $fullImagePath && 
+            strpos($fullImagePath, $fullAllowedPath) === 0) {
+            return $fullImagePath;
+        }
+    }
+    
+    return false;
+}
+
+/**
  * 处理获取缩略图的请求
  */
 function handleGetThumbnail() {
@@ -123,63 +167,18 @@ function handleGetThumbnail() {
         exit;
     }
 
-    $imagePath = urldecode($_GET['path']);
+    $imagePath = $_GET['path'];
     $settings = loadSettings();
     
-    // 调试信息 - 记录请求的路径
-    error_log("请求缩略图: {$imagePath}");
-    error_log("原始路径: " . $_GET['path']);
-    error_log("解码后路径: " . $imagePath);
+    // 解析并验证图片路径
+    $fullImagePath = resolveImagePath($imagePath);
     
-    // 验证图片路径是否在配置的目录中（安全检查）
-    $fullImagePath = realpath($imagePath);
-
-    // 如果路径包含中文，强制使用UTF-8编码处理
-    if (function_exists('mb_convert_encoding')) {
-        $fullImagePath = mb_convert_encoding($fullImagePath, 'UTF-8', 'auto');
-    }
-
-    // 验证路径是否在允许的目录中
-    $isValid = false;
-    foreach ($settings['imagePaths'] as $allowedPath) {
-        $allowedPath = rtrim($allowedPath, '/') . '/';
-        $fullAllowedPath = realpath($allowedPath);
-        
-        // 确保允许的路径也是UTF-8编码
-        if (function_exists('mb_convert_encoding')) {
-            $fullAllowedPath = mb_convert_encoding($fullAllowedPath, 'UTF-8', 'auto');
-        }
-        
-        if ($fullAllowedPath && $fullImagePath && 
-            strpos($fullImagePath, $fullAllowedPath) === 0) {
-            $isValid = true;
-            break;
-        }
-    }
-  
-    // 尝试处理可能的相对路径
-    if (!$fullImagePath) {
-        // 尝试结合文档根目录查找
-        $docRoot = $_SERVER['DOCUMENT_ROOT'] ?? '';
-        $fullImagePath = realpath($docRoot . '/' . $imagePath);
-    }
+    // 记录调试信息
+    error_log("请求缩略图 - 原始路径: {$imagePath}");
+    error_log("请求缩略图 - 解析后路径: " . ($fullImagePath ?: '无效路径'));
     
-    // 记录实际查找的路径
-    error_log("实际查找路径: " . ($fullImagePath ?: '无效路径'));
-    
-    foreach ($settings['imagePaths'] as $allowedPath) {
-        $allowedPath = rtrim($allowedPath, '/') . '/';
-        $fullAllowedPath = realpath($allowedPath);
-        
-        if ($fullAllowedPath && $fullImagePath && 
-            strpos($fullImagePath, $fullAllowedPath) === 0) {
-            $isValid = true;
-            break;
-        }
-    }
-
     // 检查文件是否存在且可读
-    if (!$isValid || !$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
+    if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
         http_response_code(404);
         echo json_encode([
             'error' => '图片不存在或无权访问',
@@ -209,32 +208,28 @@ function handleGetImage() {
         exit;
     }
     
-    $imagePath = urldecode($_GET['path']);
+    $imagePath = $_GET['path'];
     $settings = loadSettings();
     
-    // 验证图片路径是否在配置的目录中（安全检查）
-    $isValid = false;
-    foreach ($settings['imagePaths'] as $allowedPath) {
-        $fullAllowedPath = rtrim($allowedPath, '/') . '/';
-        $fullImagePath = realpath($imagePath);
-        
-        if ($fullImagePath && strpos($fullImagePath, $fullAllowedPath) === 0) {
-            $isValid = true;
-            break;
-        }
-    }
+    // 解析并验证图片路径
+    $fullImagePath = resolveImagePath($imagePath);
     
-    if (!$isValid || !file_exists($imagePath) || !is_readable($imagePath)) {
+    // 检查文件是否存在且可读
+    if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
         http_response_code(404);
-        echo json_encode(['error' => '图片不存在或无权访问']);
+        echo json_encode([
+            'error' => '图片不存在或无权访问',
+            'requestedPath' => $imagePath,
+            'resolvedPath' => $fullImagePath
+        ]);
         exit;
     }
     
     // 输出原图
-    $mimeType = mime_content_type($imagePath);
+    $mimeType = mime_content_type($fullImagePath);
     header("Content-Type: $mimeType");
-    header("Content-Length: " . filesize($imagePath));
-    readfile($imagePath);
+    header("Content-Length: " . filesize($fullImagePath));
+    readfile($fullImagePath);
     exit;
 }
 
@@ -248,40 +243,36 @@ function handleGetBase64Image() {
         exit;
     }
     
-    $imagePath = urldecode($_GET['path']);
+    $imagePath = $_GET['path'];
     $settings = loadSettings();
     
-    // 验证图片路径（安全检查）
-    $isValid = false;
-    foreach ($settings['imagePaths'] as $allowedPath) {
-        $fullAllowedPath = rtrim($allowedPath, '/') . '/';
-        $fullImagePath = realpath($imagePath);
-        
-        if ($fullImagePath && strpos($fullImagePath, $fullAllowedPath) === 0) {
-            $isValid = true;
-            break;
-        }
-    }
+    // 解析并验证图片路径
+    $fullImagePath = resolveImagePath($imagePath);
     
-    if (!$isValid || !file_exists($imagePath) || !is_readable($imagePath)) {
+    // 检查文件是否存在且可读
+    if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
         http_response_code(404);
-        echo json_encode(['error' => '图片不存在或无权访问']);
+        echo json_encode([
+            'error' => '图片不存在或无权访问',
+            'requestedPath' => $imagePath,
+            'resolvedPath' => $fullImagePath
+        ]);
         exit;
     }
     
     // 获取图片MIME类型
-    $mimeType = mime_content_type($imagePath);
+    $mimeType = mime_content_type($fullImagePath);
     
     // 检查是否是支持的图片类型
     $supportedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
     if (!in_array($mimeType, $supportedTypes)) {
         http_response_code(415);
-        echo json_encode(['error' => '不支持的图片类型']);
+        echo json_encode(['error' => '不支持的图片类型: ' . $mimeType]);
         exit;
     }
     
     // 读取图片内容并转换为Base64
-    $imageData = file_get_contents($imagePath);
+    $imageData = file_get_contents($fullImagePath);
     if ($imageData === false) {
         http_response_code(500);
         echo json_encode(['error' => '无法读取图片内容']);
@@ -294,7 +285,7 @@ function handleGetBase64Image() {
     echo json_encode([
         'mimeType' => $mimeType,
         'base64' => $base64,
-        'size' => filesize($imagePath)
+        'size' => filesize($fullImagePath)
     ]);
     exit;
 }
@@ -505,6 +496,9 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
                 $width = $dimensions ? $dimensions[0] : 0;
                 $height = $dimensions ? $dimensions[1] : 0;
                 
+                // 正确编码URL中的特殊字符
+                $encodedPath = urlencode($relativePath);
+                
                 $images[] = [
                     'name' => pathinfo($path, PATHINFO_FILENAME),
                     'filename' => pathinfo($path, PATHINFO_BASENAME),
@@ -517,9 +511,9 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
                     'width' => $width,
                     'height' => $height,
                     'extension' => $ext,
-                    'thumbnailUrl' => 'index.php?action=getThumbnail&path=' . urlencode($relativePath),
-                    'imageUrl' => 'index.php?action=getImage&path=' . urlencode($relativePath),
-                    'base64Url' => 'index.php?action=getBase64Image&path=' . urlencode($relativePath)
+                    'thumbnailUrl' => 'index.php?action=getThumbnail&path=' . $encodedPath,
+                    'imageUrl' => 'index.php?action=getImage&path=' . $encodedPath,
+                    'base64Url' => 'index.php?action=getBase64Image&path=' . $encodedPath
                 ];
             }
         }
