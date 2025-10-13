@@ -128,11 +128,35 @@ function handleGetThumbnail() {
     
     // 调试信息 - 记录请求的路径
     error_log("请求缩略图: {$imagePath}");
+    error_log("原始路径: " . $_GET['path']);
+    error_log("解码后路径: " . $imagePath);
     
     // 验证图片路径是否在配置的目录中（安全检查）
-    $isValid = false;
     $fullImagePath = realpath($imagePath);
-    
+
+    // 如果路径包含中文，强制使用UTF-8编码处理
+    if (function_exists('mb_convert_encoding')) {
+        $fullImagePath = mb_convert_encoding($fullImagePath, 'UTF-8', 'auto');
+    }
+
+    // 验证路径是否在允许的目录中
+    $isValid = false;
+    foreach ($settings['imagePaths'] as $allowedPath) {
+        $allowedPath = rtrim($allowedPath, '/') . '/';
+        $fullAllowedPath = realpath($allowedPath);
+        
+        // 确保允许的路径也是UTF-8编码
+        if (function_exists('mb_convert_encoding')) {
+            $fullAllowedPath = mb_convert_encoding($fullAllowedPath, 'UTF-8', 'auto');
+        }
+        
+        if ($fullAllowedPath && $fullImagePath && 
+            strpos($fullImagePath, $fullAllowedPath) === 0) {
+            $isValid = true;
+            break;
+        }
+    }
+  
     // 尝试处理可能的相对路径
     if (!$fullImagePath) {
         // 尝试结合文档根目录查找
@@ -154,14 +178,14 @@ function handleGetThumbnail() {
         }
     }
 
+    // 检查文件是否存在且可读
     if (!$isValid || !$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
         http_response_code(404);
         echo json_encode([
             'error' => '图片不存在或无权访问',
-            'path' => $imagePath,
+            'requestedPath' => $imagePath,
             'resolvedPath' => $fullImagePath,
-            'exists' => $fullImagePath ? file_exists($fullImagePath) : false,
-            'readable' => $fullImagePath ? is_readable($fullImagePath) : false
+            'exists' => $fullImagePath ? file_exists($fullImagePath) : false
         ]);
         exit;
     }
