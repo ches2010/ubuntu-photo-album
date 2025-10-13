@@ -580,16 +580,27 @@ function clearCache() {
     global $cacheDir;
     
     if (!is_dir($cacheDir)) {
+        // 如果缓存目录不存在，创建它
+        mkdir($cacheDir, 0755, true);
         return true;
     }
-    
-    $files = glob($cacheDir . '*.json');
-    foreach ($files as $file) {
-        if (is_file($file)) {
-            unlink($file);
+
+    // 清除所有缓存文件
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($cacheDir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+  
+    foreach ($files as $fileinfo) {
+        $todo = ($fileinfo->isDir() ? 'rmdir' : 'unlink');
+        if (!$todo($fileinfo->getRealPath())) {
+            error_log("清除缓存失败: " . $fileinfo->getRealPath());
+            return false;
         }
     }
-    
+
+    // 记录缓存清理成功日志
+    error_log("缓存已成功清除");
     return true;
 }
 
