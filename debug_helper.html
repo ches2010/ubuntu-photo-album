@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ubuntu服务器相册 - 前端调试助手</title>
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --primary-light: #34495e;
+            --secondary-color: #3498db;
+            --accent-color: #e74c3c;
+            --text-color: #333;
+            --text-light: #7f8c8d;
+            --background-color: #f8f9fa;
+            --card-background: #fff;
+            --border-color: #ddd;
+            --shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            --transition: all 0.3s ease;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: var(--text-color);
+            background-color: var(--background-color);
+            padding-bottom: 40px;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 15px;
+        }
+
+        .app-header {
+            background-color: var(--primary-color);
+            color: white;
+            padding: 1rem 0;
+            margin-bottom: 2rem;
+            box-shadow: var(--shadow);
+        }
+
+        .app-header .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            background-color: var(--primary-light);
+            color: white;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: var(--transition);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .btn:hover {
+            background-color: var(--secondary-color);
+            transform: translateY(-2px);
+        }
+
+        .btn.active {
+            background-color: var(--secondary-color);
+        }
+
+        .btn.primary {
+            background-color: var(--secondary-color);
+        }
+
+        .btn.primary:hover {
+            background-color: #2980b9;
+        }
+
+        .view {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .view.active {
+            display: block;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .debug-section {
+            background-color: var(--card-background);
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: var(--shadow);
+            margin-bottom: 2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 0.7rem;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 1rem;
+            transition: var(--transition);
+        }
+
+        .form-control:focus {
+            border-color: var(--secondary-color);
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.2);
+        }
+
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .results-container {
+            margin-top: 2rem;
+        }
+
+        .result-item {
+            background-color: #f1f3f4;
+            padding: 1rem;
+            border-radius: 4px;
+            margin-bottom: 0.5rem;
+            border-left: 4px solid var(--secondary-color);
+        }
+
+        .result-item.error {
+            border-left-color: var(--accent-color);
+        }
+
+        .result-item.success {
+            border-left-color: #2ecc71;
+        }
+
+        .highlight {
+            background-color: #fff9c4;
+            padding: 0.2rem 0.4rem;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--text-light);
+        }
+
+        .spinner {
+            width: 30px;
+            height: 30px;
+            border: 3px solid rgba(52, 152, 219, 0.2);
+            border-top-color: var(--secondary-color);
+            border-radius: 50%;
+            animation: spin 1s ease-in-out infinite;
+            margin: 0 auto 1rem;
+            display: inline-block;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <header class="app-header">
+        <div class="container">
+            <h1>📸 Ubuntu服务器相册 - 前端调试助手</h1>
+            <div class="controls">
+                <button class="btn active" id="debugViewBtn">🔍 调试</button>
+            </div>
+        </div>
+    </header>
+
+    <div class="container">
+        <div id="debugView" class="view active">
+            <div class="debug-section">
+                <h2>前端问题诊断工具</h2>
+                <p>本工具将帮助您排查 Ubuntu 服务器相册项目中前端无照片显示的问题。</p>
+                
+                <div class="form-group">
+                    <label for="apiUrl">API 地址 (通常为 index.php):</label>
+                    <input type="text" id="apiUrl" class="form-control" value="./index.php" placeholder="例如: ./index.php 或 http://your-server.com/index.php">
+                </div>
+
+                <div class="form-group">
+                    <label for="imagePath">配置的图片文件夹路径 (用于验证):</label>
+                    <input type="text" id="imagePath" class="form-control" value="/path/to/your/photos" placeholder="例如: /var/www/photos">
+                </div>
+
+                <div class="form-actions">
+                    <button id="runDiagnosisBtn" class="btn primary">🚀 开始诊断</button>
+                </div>
+            </div>
+
+            <div id="resultsContainer" class="results-container">
+                <!-- Results will be appended here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {
+            const runBtn = document.getElementById('runDiagnosisBtn');
+            const resultsContainer = document.getElementById('resultsContainer');
+
+            runBtn.addEventListener('click', runDiagnosis);
+
+            async function runDiagnosis() {
+                clearResults();
+                const apiUrl = document.getElementById('apiUrl').value.trim();
+                const imagePath = document.getElementById('imagePath').value.trim();
+
+                if (!apiUrl) {
+                    addResult('API 地址不能为空！', 'error');
+                    return;
+                }
+
+                // Step 1: Check if API endpoint is accessible
+                addResult('正在检查 API 端点...', 'info');
+                try {
+                    const apiResponse = await fetch(apiUrl, { method: 'GET' });
+                    if (!apiResponse.ok) {
+                        throw new Error(`API 端点返回错误: ${apiResponse.status} ${apiResponse.statusText}`);
+                    }
+                    addResult(`✅ API 端点访问成功 (HTTP ${apiResponse.status})`, 'success');
+                } catch (e) {
+                    addResult(`❌ API 端点访问失败: ${e.message}`, 'error');
+                    return; // Stop if API is not accessible
+                }
+
+                // Step 2: Try to fetch gallery data
+                addResult('正在尝试获取图片列表...', 'info');
+                try {
+                    const galleryResponse = await fetch(`${apiUrl}?action=gallery&page=1&per_page=1`, {
+                        method: 'GET',
+                        headers: { 'Content-Type': 'application/json' }
+                    });
+                    if (!galleryResponse.ok) {
+                        throw new Error(`获取图片列表失败: ${galleryResponse.status} ${galleryResponse.statusText}`);
+                    }
+                    const galleryData = await galleryResponse.json();
+                    console.log('Gallery Data:', galleryData);
+
+                    if (galleryData && Array.isArray(galleryData.items) && galleryData.items.length > 0) {
+                        const firstImage = galleryData.items[0];
+                        addResult(`✅ 成功获取图片列表 (共 ${galleryData.total || 'unknown'} 张)`, 'success');
+                        addResult(`   - 第一张图片: <span class="highlight">${firstImage.path}</span> (${firstImage.name})`, 'info');
+                        addResult(`   - 文件大小: ${formatFileSize(firstImage.size)} | 修改时间: ${new Date(firstImage.mtime * 1000).toLocaleString()}`, 'info');
+
+                        // Step 3: Validate image path and try to load image
+                        addResult('正在验证图片路径...', 'info');
+                        if (firstImage.path) {
+                            let fullImagePath = firstImage.path;
+                            if (fullImagePath.startsWith('/')) {
+                                // If it's an absolute path, prepend with a placeholder server URL for testing
+                                fullImagePath = 'http://example.com' + fullImagePath; // This is just for display
+                                addResult(`   - 检测到绝对路径: <span class="highlight">${firstImage.path}</span>`, 'info');
+                                addResult(`   - 请确保 Nginx 配置能正确映射该路径到 Web 可访问 URL`, 'info');
+                            } else {
+                                // Relative path, prepend API URL base
+                                fullImagePath = new URL(firstImage.path, window.location.href).href;
+                            }
+                            addResult(`   - 尝试加载图片 URL: <span class="highlight">${fullImagePath}</span>`, 'info');
+
+                            // Try to test image loading (only if relative)
+                            if (!firstImage.path.startsWith('/')) {
+                                const img = new Image();
+                                img.src = firstImage.path;
+                                img.onload = () => {
+                                    addResult(`✅ 图片 URL 可访问 (加载成功)`, 'success');
+                                };
+                                img.onerror = () => {
+                                    addResult(`❌ 图片 URL 无法访问 (加载失败)`, 'error');
+                                };
+                            } else {
+                                addResult(`ℹ️  使用绝对路径，无法直接在浏览器测试加载。请检查 Nginx 配置。`, 'info');
+                            }
+                        } else {
+                             addResult(`⚠️ API 返回的图片路径为空或无效。`, 'error');
+                        }
+                        
+                    } else {
+                        addResult(`❌ API 返回的图片列表为空或格式错误。`, 'error');
+                        addResult(`   - 请检查后端 PHP 代码是否正确扫描了图片目录。`, 'info');
+                    }
+                } catch (e) {
+                    addResult(`❌ 获取图片列表失败: ${e.message}`, 'error');
+                    addResult(`   - 可能是 PHP 后端返回了非 JSON 数据或发生错误。`, 'info');
+                    addResult(`   - 请检查浏览器开发者工具的 Network 标签页中 ${apiUrl} 的响应。`, 'info');
+                }
+
+                // Step 4: Configuration check suggestions
+                addResult('--- 诊断完成，常见问题与解决方案 ---', 'info');
+                addResult('<strong>1. PHP 后端错误</strong>: 检查 PHP 错误日志 (通常在 /var/log/nginx/error.log 或 PHP-FPM 日志)。', 'info');
+                addResult('<strong>2. 权限问题</strong>: 确保 www-data 用户对图片目录有读取权限 (sudo chown -R www-data:www-data /path/to/photos)。', 'info');
+                addResult('<strong>3. 配置错误</strong>: 确认 config.json 中的 "imagePath" 指向正确的图片文件夹。', 'info');
+                addResult('<strong>4. Nginx 配置</strong>: 确保 Nginx 配置允许访问图片文件。', 'info');
+                addResult('<strong>5. 文件格式</strong>: 确认图片格式为 JPG, PNG, GIF, WEBP。', 'info');
+                addResult('<strong>6. API 路径</strong>: 确认前端请求的 API 路径与后端 index.php 位置一致。', 'info');
+            }
+
+            function clearResults() {
+                resultsContainer.innerHTML = '';
+            }
+
+            function addResult(text, type = 'info') {
+                 const div = document.createElement('div');
+                 div.className = `result-item ${type}`;
+                 div.innerHTML = text;
+                 resultsContainer.appendChild(div);
+                 resultsContainer.scrollTop = resultsContainer.scrollHeight; // Auto-scroll to bottom
+            }
+
+            function formatFileSize(bytes) {
+                if (bytes === 0) return '0 Bytes';
+                const k = 1024;
+                const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+            }
+        });
+    </script>
+</body>
+</html>
+
+
+
