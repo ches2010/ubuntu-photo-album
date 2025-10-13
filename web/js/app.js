@@ -29,7 +29,10 @@ document.addEventListener('DOMContentLoaded', function() {
         
         try {
             // 加载设置
-            await loadSettings();
+            const response = await fetch('index.php?action=getSettings');
+            if (!response.ok) throw new Error('加载设置失败');
+
+            appState.settings = await response.json();
             
             // 初始化子模块
             if (typeof initGallery === 'function') {
