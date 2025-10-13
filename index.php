@@ -379,11 +379,23 @@ function handleSaveSettings() {
  * 处理刷新缓存的请求
  */
 function handleRefreshCache() {
+    // 清除图片缓存
+    $cacheCleared = clearCache();
+  
     if (clearCache()) {
-        echo json_encode(['success' => true, 'message' => '缓存已刷新']);
+        // 主动触发一次图片扫描（可选）
+        getImages();
+      
+        echo json_encode([
+            'success' => true,
+            'message' => '缓存已刷新，共清理 ' . count(glob($GLOBALS['cacheDir'] . '*')) . ' 个文件'
+        ]);
     } else {
         http_response_code(500);
-        echo json_encode(['error' => '刷新缓存失败']);
+        echo json_encode([
+            'error' => '刷新缓存失败',
+            'success' => false
+        ]);
     }
 }
 
