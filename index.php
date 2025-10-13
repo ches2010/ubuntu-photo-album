@@ -4,6 +4,11 @@
  * 处理图片扫描、配置管理和缓存操作
  */
 
+// 在index.php顶部设置
+error_reporting(E_ERROR | E_WARNING | E_PARSE);
+ini_set('log_errors', 1);
+ini_set('error_log', '/var/log/php/photo-album.log'); // 单独的日志文件
+
 // 先判断是否是默认首页请求（无任何参数）
 $isDefaultRequest = empty($_GET) && 
                    ($_SERVER['REQUEST_URI'] === '/' || 
