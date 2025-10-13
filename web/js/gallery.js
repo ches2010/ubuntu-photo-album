@@ -557,26 +557,40 @@ function initGallery(settings) {
      */
     function setupEventListeners() {
         // 分页按钮
-        elements.prevPageBtn.addEventListener('click', () => goToPage(galleryState.currentPage - 1));
-        elements.nextPageBtn.addEventListener('click', () => goToPage(galleryState.currentPage + 1));
-        elements.jumpToPageBtn.addEventListener('click', () => goToPage(parseInt(elements.pageJumpInput.value) || 1));
-        elements.pageJumpInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                goToPage(parseInt(elements.pageJumpInput.value) || 1);
-            }
-        });
+        if (elements.prevPageBtn) {
+            elements.prevPageBtn.addEventListener('click', () => goToPage(galleryState.currentPage - 1));
+        }
+        if (elements.nextPageBtn) {
+            elements.nextPageBtn.addEventListener('click', () => goToPage(galleryState.currentPage + 1));
+        }
+        if (elements.jumpToPageBtn) {        
+            elements.jumpToPageBtn.addEventListener('click', () => goToPage(parseInt(elements.pageJumpInput.value) || 1));
+        }
+        if (elements.pageJumpInput) {        
+            elements.pageJumpInput.addEventListener('keypress', (e) => {            
+                if (e.key === 'Enter') {                
+                    goToPage(parseInt(elements.pageJumpInput.value) || 1);            
+                }        
+            });
+        }
 
         // 搜索和排序
-        elements.searchBtn.addEventListener('click', () => searchImages(elements.searchInput.value));
-        elements.searchInput.addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') {
-                searchImages(elements.searchInput.value);
-            }
-        });
-        elements.sortSelect.addEventListener('change', () => sortImages(elements.sortSelect.value));
+        if (elements.searchBtn) {        
+            elements.searchBtn.addEventListener('click', () => searchImages(elements.searchInput.value));
+        }
+        if (elements.searchInput) {        
+            elements.searchInput.addEventListener('keypress', (e) => {            
+                if (e.key === 'Enter') {                
+                    searchImages(elements.searchInput.value);            
+                }        
+            });
+        }
+        if (elements.sortSelect) {        
+            elements.sortSelect.addEventListener('change', () => sortImages(elements.sortSelect.value));
+        }
 
         // 模态框关闭按钮
-        const closeBtn = elements.imageModal.querySelector('.close-btn');
+        const closeBtn = elements.imageModal ? elements.imageModal.querySelector('.close-btn') : null;
         if (closeBtn) {
             closeBtn.addEventListener('click', closeImageModal);
         }
@@ -590,12 +604,14 @@ function initGallery(settings) {
         });
 
         // 图片操作按钮
-        elements.modalActions.forEach(btn => {
-            btn.addEventListener('click', () => {
-                const action = btn.getAttribute('data-action');
-                handleImageAction(action);
+        if (elements.modalActions && elements.modalActions.length) {        
+            elements.modalActions.forEach(btn => {            
+                btn.addEventListener('click', () =>                 
+                    const action = btn.getAttribute('data-action');               
+                    handleImageAction(action);            
+                });
             });
-        });
+        }
 
         // 上一张/下一张图片按钮
         elements.prevImageBtn.addEventListener('click', showPreviousImage);
