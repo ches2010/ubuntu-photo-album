@@ -124,6 +124,7 @@ document.addEventListener('DOMContentLoaded', function() {
      * 显示加载指示器
      */
     function showLoader() {
+        appState.isLoading = true;
         elements.loader.style.display = 'flex';
     }
 
@@ -131,6 +132,7 @@ document.addEventListener('DOMContentLoaded', function() {
      * 隐藏加载指示器
      */
     function hideLoader() {
+        appState.isLoading = false;
         elements.loader.style.display = 'none';
     }
 
@@ -138,24 +140,55 @@ document.addEventListener('DOMContentLoaded', function() {
      * 刷新缓存并重新加载图片
      */
     async function refreshCache() {
+        // 防止重复点击
+        if (appState.isLoading) return;
+        
+        const refreshBtn = elements.refreshBtn;
+        const originalText = refreshBtn.innerHTML;
+        
+        // 更新按钮状态和显示
+        refreshBtn.disabled = true;
+        refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 刷新中...';
         showLoader();
+        
         try {
-            const response = await fetch('index.php?action=refreshCache');
-            const result = await response.json();
-            
-            if (response.ok) {
-                showNotification('缓存已刷新，正在重新加载图片...', 'success');
-                // 重新加载图片
-                if (window.loadGallery) {
-                    window.loadGallery();
+            // 发送刷新缓存请求，禁用缓存确保请求有效
+            const response = await fetch('index.php?action=refreshCache', {
+                method: 'GET',
+                cache: 'no-store',
+                headers: {
+                    'Cache-Control': 'no-cache'
                 }
+            });
+            
+            // 处理非JSON响应
+            let result;
+            try {
+                result = await response.json();
+            } catch (jsonError) {
+                throw new Error('服务器返回无效响应');
+            }
+            
+            if (response.ok && result.success) {
+                showNotification(`缓存已刷新，${result.message || '共清理 ' + result.clearedCount + ' 个文件'}`, 'success');
+                
+                // 延迟重新加载，让用户看到反馈
+                setTimeout(() => {
+                    // 重新加载图片列表
+                    if (window.loadGallery) {
+                        window.loadGallery(1); // 强制加载第一页
+                    }
+                }, 800);
             } else {
                 showNotification('刷新缓存失败: ' + (result.error || '未知错误'), 'error');
             }
         } catch (error) {
             console.error('刷新缓存错误:', error);
-            showNotification('刷新缓存时发生错误', 'error');
+            showNotification('刷新缓存时发生错误: ' + error.message, 'error');
         } finally {
+            // 恢复按钮状态
+            refreshBtn.disabled = false;
+            refreshBtn.innerHTML = originalText;
             hideLoader();
         }
     }
@@ -180,15 +213,20 @@ document.addEventListener('DOMContentLoaded', function() {
         // 监听设置保存事件，更新本地设置并刷新画廊
         document.addEventListener('settingsSaved', (e) => {
             appState.settings = e.detail;
-            showNotification('设置已保存', 'success');
-            switchView('gallery');
+            showNotification('设置已保存，正在刷新图片...', 'success');
+            
+            // 保存设置后自动刷新缓存和图片
+            setTimeout(() => {
+                refreshCache();
+                switchView('gallery');
+            }, 500);
         });
     }
 
     /**
      * 初始化应用
      */
-    function initApp() {
+    function init() {
         setupEventListeners();
         loadSettings();
         
@@ -202,10 +240,12 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification,
             showLoader,
             hideLoader,
-            switchView
+            switchView,
+            refreshCache
         };
     }
 
     // 启动应用
-    initApp();
+    init();
 });
+    
