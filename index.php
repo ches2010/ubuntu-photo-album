@@ -125,15 +125,15 @@ function resolveImagePath($userPath) {
     // 标准化路径
     $normalizedPath = str_replace(['\\', '//'], '/', $decodedPath);
     
-    // 记录配置的图片路径，用于调试
+    // 记录调试信息
     error_log("配置的图片路径: " . implode(', ', $settings['imagePaths']));
-    error_log("尝试解析的用户路径: " . $normalizedPath);
+    error_log("用户请求路径: " . $normalizedPath);
     
-    // 尝试结合每个配置的图片路径
+    // 尝试每个配置的基础路径
     foreach ($settings['imagePaths'] as $basePath) {
         // 确保基础路径是绝对路径
         if (!is_absolute_path($basePath)) {
-            error_log("警告: 配置的路径 '$basePath' 不是绝对路径");
+            error_log("错误: 配置的路径 '$basePath' 不是绝对路径");
             continue;
         }
         
@@ -141,39 +141,16 @@ function resolveImagePath($userPath) {
         $fullPath = $basePath . '/' . $normalizedPath;
         $fullPath = realpath($fullPath);
         
-        // 处理编码
-        if (function_exists('mb_convert_encoding')) {
-            $fullPath = mb_convert_encoding($fullPath, 'UTF-8', 'auto');
-        }
-        
-        // 检查路径是否有效
+        // 检查文件是否存在且可读
         if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
             error_log("成功解析路径: $fullPath");
             return $fullPath;
         } else {
-            error_log("尝试的路径无效: $fullPath");
+            error_log("尝试路径无效: $fullPath");
         }
     }
     
-    // 尝试直接使用绝对路径（如果用户提供的是绝对路径）
-    if (is_absolute_path($normalizedPath)) {
-        $fullPath = realpath($normalizedPath);
-        if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
-            // 检查是否在允许的路径范围内
-            foreach ($settings['imagePaths'] as $allowedPath) {
-                $allowedPath = rtrim($allowedPath, '/') . '/';
-                $fullAllowedPath = realpath($allowedPath);
-                
-                if ($fullAllowedPath && strpos($fullPath, $fullAllowedPath) === 0) {
-                    error_log("成功解析绝对路径: $fullPath");
-                    return $fullPath;
-                }
-            }
-            error_log("路径不在允许的范围内: $fullPath");
-        }
-    }
-    
-    error_log("所有路径尝试失败，无法解析图片: $userPath");
+    error_log("所有路径尝试失败");
     return false;
 }
 
