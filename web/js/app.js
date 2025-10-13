@@ -157,8 +157,8 @@ document.addEventListener('DOMContentLoaded', function() {
         // 更新按钮状态和显示
         refreshBtn.disabled = true;
         refreshBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 刷新中...';
-        showLoader();
         
+        showLoader();        
         try {
             // 发送刷新缓存请求，禁用缓存确保请求有效
             const response = await fetch('index.php?action=refreshCache', {
@@ -167,7 +167,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 headers: {
                     'Cache-Control': 'no-cache'
                 }
-            });
+            });            
             
             // 处理非JSON响应
             let result;
