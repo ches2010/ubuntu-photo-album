@@ -2,14 +2,6 @@
  * 应用主控制器
  * 负责初始化应用、管理视图切换和全局状态
  */
-// 在app.js中添加
-document.addEventListener('DOMContentLoaded', function() {
-    // 绑定刷新缓存按钮事件
-    const refreshBtn = document.getElementById('refreshBtn');
-    if (refreshBtn) {
-        refreshBtn.addEventListener('click', refreshCache);
-    }
-});
 document.addEventListener('DOMContentLoaded', function() {
     // 全局状态
     const appState = {
@@ -119,6 +111,8 @@ document.addEventListener('DOMContentLoaded', function() {
      * @param {string} type - 通知类型：success, error, info
      */
     function showNotification(message, type = 'info') {
+        if (!elements.notification) return;
+        
         elements.notification.textContent = message;
         elements.notification.className = 'notification ' + type;
         elements.notification.style.display = 'block';
@@ -133,7 +127,9 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function showLoader() {
         appState.isLoading = true;
-        elements.loader.style.display = 'flex';
+        if (elements.loader) {
+            elements.loader.style.display = 'flex';
+        }
     }
 
     /**
@@ -141,7 +137,9 @@ document.addEventListener('DOMContentLoaded', function() {
      */
     function hideLoader() {
         appState.isLoading = false;
-        elements.loader.style.display = 'none';
+        if (elements.loader) {
+            elements.loader.style.display = 'none';
+        }
     }
 
     /**
@@ -152,6 +150,8 @@ document.addEventListener('DOMContentLoaded', function() {
         if (appState.isLoading) return;
         
         const refreshBtn = elements.refreshBtn;
+        if (!refreshBtn) return;
+        
         const originalText = refreshBtn.innerHTML;
         
         // 更新按钮状态和显示
