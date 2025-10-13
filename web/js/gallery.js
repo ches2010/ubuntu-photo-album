@@ -40,7 +40,8 @@ function initGallery(settings) {
         modalDimensions: document.getElementById('imageDimensions'),
         modalModified: document.getElementById('imageModified'),
         downloadLink: document.getElementById('downloadLink'),
-        modalActions: document.querySelectorAll('.modal-btn[data-action]')
+        modalActions: document.querySelectorAll('.modal-btn[data-action]'),
+        modalLoader: document.getElementById('modalLoader') // 新增：模态框加载指示器
     };
 
     /**
@@ -121,17 +122,22 @@ function initGallery(settings) {
             const galleryItem = document.createElement('div');
             galleryItem.className = 'gallery-item';
             
-            // 使用服务器生成的缩略图URL
+            // 使用服务器生成的缩略图URL，添加新图片标记
             galleryItem.innerHTML = `
-                <img 
-                    src="${getThumbnail(image.path)}" 
-                    alt="${escapeHtml(image.name)}" 
-                    class="gallery-item-image"
-                    loading="lazy"
-                    onload="this.classList.add('loaded')"
-                >
+                <div class="gallery-item-image-container">
+                    <img 
+                        src="${getThumbnail(image.path)}" 
+                        alt="${escapeHtml(image.name)}" 
+                        class="gallery-item-image"
+                        loading="lazy"
+                        onload="this.classList.add('loaded')"
+                        onerror="this.src='web/images/error-placeholder.png'"
+                    >
+                    ${image.isNew ? '<span class="new-badge">新</span>' : ''}
+                    <div class="image-loading-indicator"></div>
+                </div>
                 <div class="gallery-item-info">
-                    <div class="gallery-item-name">${escapeHtml(image.name)}</div>
+                    <div class="gallery-item-name">${truncateText(escapeHtml(image.name), 20)}</div>
                     <div class="gallery-item-meta">
                         <span>${image.sizeFormatted}</span>
                         <span>${new Date(image.modified * 1000).toLocaleDateString()}</span>
@@ -142,6 +148,17 @@ function initGallery(settings) {
             galleryItem.addEventListener('click', () => openImageModal(image));
             elements.gallery.appendChild(galleryItem);
         });
+    }
+
+    /**
+     * 截断长文本
+     * @param {string} text - 需要截断的文本
+     * @param {number} maxLength - 最大长度
+     * @returns {string} 截断后的文本
+     */
+    function truncateText(text, maxLength) {
+        if (text.length <= maxLength) return text;
+        return text.substring(0, maxLength) + '...';
     }
 
     /**
@@ -156,7 +173,7 @@ function initGallery(settings) {
             return `index.php?action=getThumbnail&path=${encodeURIComponent(normalizedPath)}`;
         } catch (e) {
             console.error('路径编码错误:', e);
-            return '';
+            return 'web/images/error-placeholder.png';
         }
     }
 
@@ -180,6 +197,7 @@ function initGallery(settings) {
         resetImageTransform();
 
         // 显示加载状态
+        showModalLoader();
         elements.modalImage.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
         
         try {
@@ -207,11 +225,71 @@ function initGallery(settings) {
             if (window.app && window.app.showNotification) {
                 window.app.showNotification('无法加载图片: ' + error.message, 'error');
             }
+            elements.modalImage.src = 'web/images/error-placeholder.png';
+        } finally {
+            hideModalLoader();
         }
 
         // 显示模态框
         elements.imageModal.classList.add('active');
         document.body.style.overflow = 'hidden';
+    }
+
+    /**
+     * 显示模态框加载指示器
+     */
+    function showModalLoader() {
+        if (elements.modalLoader) {
+            elements.modalLoader.style.display = 'flex';
+        } else {
+            // 如果没有专门的加载器，使用图片占位
+            elements.modalImage.classList.add('loading');
+        }
+    }
+
+    /**
+     * 隐藏模态框加载指示器
+     */
+    function hideModalLoader() {
+        if (elements.modalLoader) {
+            elements.modalLoader.style.display = 'none';
+        } else {
+            elements.modalImage.classList.remove('loading');
+        }
+    }
+
+    /**
+     * 获取当前图片在列表中的索引
+     * @returns {number} 图片索引
+     */
+    function getCurrentImageIndex() {
+        if (!galleryState.currentImage || !galleryState.images.length) return -1;
+        
+        return galleryState.images.findIndex(
+            img => img.path === galleryState.currentImage.path
+        );
+    }
+
+    /**
+     * 查看上一张图片
+     */
+    function showPreviousImage() {
+        const currentIndex = getCurrentImageIndex();
+        if (currentIndex === -1) return;
+        
+        const prevIndex = currentIndex > 0 ? currentIndex - 1 : galleryState.images.length - 1;
+        openImageModal(galleryState.images[prevIndex]);
+    }
+
+    /**
+     * 查看下一张图片
+     */
+    function showNextImage() {
+        const currentIndex = getCurrentImageIndex();
+        if (currentIndex === -1) return;
+        
+        const nextIndex = currentIndex < galleryState.images.length - 1 ? currentIndex + 1 : 0;
+        openImageModal(galleryState.images[nextIndex]);
     }
 
     /**
@@ -248,6 +326,13 @@ function initGallery(settings) {
      * 关闭图片预览模态框
      */
     function closeImageModal() {
+        // 退出全屏（如果处于全屏状态）
+        if (document.fullscreenElement) {
+            document.exitFullscreen().catch(err => {
+                console.error('退出全屏失败:', err);
+            });
+        }
+        
         elements.imageModal.classList.remove('active');
         document.body.style.overflow = '';
         galleryState.currentImage = null;
@@ -263,13 +348,14 @@ function initGallery(settings) {
             flipX: 1,
             flipY: 1
         };
-        applyImageTransform();
+        applyTransformations();
     }
 
     /**
-     * 应用图片变换（旋转、翻转）
+     * 应用所有图片变换（旋转、翻转）
+     * 分离出来的变换应用逻辑
      */
-    function applyImageTransform() {
+    function applyTransformations() {
         const { rotation, flipX, flipY } = galleryState.transform;
         elements.modalImage.style.transform = `rotate(${rotation}deg) scaleX(${flipX}) scaleY(${flipY})`;
     }
@@ -301,23 +387,39 @@ function initGallery(settings) {
                 return;
         }
 
-        applyImageTransform();
+        applyTransformations();
     }
 
     /**
      * 切换全屏模式
      */
     function toggleFullscreen() {
-        if (!document.fullscreenElement) {
-            elements.imageModal.requestFullscreen().catch(err => {
-                console.error(`全屏错误: ${err.message}`);
-                if (window.app && window.app.showNotification) {
-                    window.app.showNotification('无法进入全屏模式: ' + err.message, 'error');
+        try {
+            if (!document.fullscreenElement) {
+                if (elements.imageModal.requestFullscreen) {
+                    elements.imageModal.requestFullscreen();
+                } else if (elements.imageModal.webkitRequestFullscreen) { /* Safari */
+                    elements.imageModal.webkitRequestFullscreen();
+                } else if (elements.imageModal.msRequestFullscreen) { /* IE11 */
+                    elements.imageModal.msRequestFullscreen();
                 }
-            });
-        } else {
-            if (document.exitFullscreen) {
-                document.exitFullscreen();
+                // 添加全屏状态类
+                elements.imageModal.classList.add('fullscreen');
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) { /* Safari */
+                    document.webkitExitFullscreen();
+                } else if (document.msExitFullscreen) { /* IE11 */
+                    document.msExitFullscreen();
+                }
+                // 移除全屏状态类
+                elements.imageModal.classList.remove('fullscreen');
+            }
+        } catch (err) {
+            console.error(`全屏错误: ${err.message}`);
+            if (window.app && window.app.showNotification) {
+                window.app.showNotification('无法切换全屏模式: ' + err.message, 'error');
             }
         }
     }
@@ -331,21 +433,46 @@ function initGallery(settings) {
 
         switch (e.key) {
             case 'Escape':
+                // ESC键 - 关闭模态框，同时退出全屏
+                e.preventDefault();
                 closeImageModal();
                 break;
             case 'ArrowLeft':
-                handleImageAction('rotateLeft');
+                // 左方向键 - 上一张图片
+                e.preventDefault();
+                showPreviousImage();
                 break;
             case 'ArrowRight':
+                // 右方向键 - 下一张图片
+                e.preventDefault();
+                showNextImage();
+                break;
+            case 'ArrowUp':
+                // 上方向键 - 向左旋转
+                e.preventDefault();
+                handleImageAction('rotateLeft');
+                break;
+            case 'ArrowDown':
+                // 下方向键 - 向右旋转
+                e.preventDefault();
                 handleImageAction('rotateRight');
                 break;
             case 'h':
+            case 'H':
+                // H键 - 水平翻转
+                e.preventDefault();
                 handleImageAction('flipHorizontal');
                 break;
             case 'v':
+            case 'V':
+                // V键 - 垂直翻转
+                e.preventDefault();
                 handleImageAction('flipVertical');
                 break;
             case 'f':
+            case 'F':
+                // F键 - 全屏切换
+                e.preventDefault();
                 handleImageAction('fullscreen');
                 break;
             case ' ':
@@ -425,10 +552,14 @@ function initGallery(settings) {
         elements.sortSelect.addEventListener('change', () => sortImages(elements.sortSelect.value));
 
         // 模态框关闭按钮
-        elements.imageModal.querySelector('.close-btn').addEventListener('click', closeImageModal);
+        const closeBtn = elements.imageModal.querySelector('.close-btn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', closeImageModal);
+        }
 
         // 点击模态框背景关闭
         elements.imageModal.addEventListener('click', (e) => {
+            // 检查点击的是模态框背景而非内容
             if (e.target === elements.imageModal) {
                 closeImageModal();
             }
@@ -444,6 +575,13 @@ function initGallery(settings) {
 
         // 键盘事件
         document.addEventListener('keydown', handleKeyPress);
+
+        // 监听全屏状态变化
+        document.addEventListener('fullscreenchange', () => {
+            if (!document.fullscreenElement) {
+                elements.imageModal.classList.remove('fullscreen');
+            }
+        });
 
         // 监听设置变化事件
         document.addEventListener('settingsSaved', (e) => {
@@ -462,3 +600,4 @@ function initGallery(settings) {
     // 初始加载图片
     loadImages();
 }
+    
