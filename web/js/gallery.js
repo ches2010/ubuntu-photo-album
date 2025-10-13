@@ -150,8 +150,15 @@ function initGallery(settings) {
      * @returns {string} 缩略图URL
      */
     function getThumbnail(path) {
-        // 调用服务器接口获取真实缩略图
-        return `index.php?action=getThumbnail&path=${encodeURIComponent(path)}`;
+        // 修复路径编码问题，确保特殊字符正确编码
+        try {
+            // 先解码再编码，处理可能的双重编码问题
+            const decodedPath = decodeURIComponent(path);
+            return `index.php?action=getThumbnail&path=${encodeURIComponent(decodedPath)}`;
+        } catch (e) {
+            console.error('路径编码错误:', e);
+            return `index.php?action=getThumbnail&path=${encodeURIComponent(path)}`;
+        }
     }
 
     /**
@@ -177,8 +184,16 @@ function initGallery(settings) {
         elements.modalImage.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
         
         try {
+            // 修复Base64图片路径编码
+            let imagePath = image.path;
+            try {
+                imagePath = decodeURIComponent(imagePath);
+            } catch (e) {
+                console.error('解码图片路径失败:', e);
+            }
+            
             // 获取Base64编码的原图
-            const base64Image = await getBase64Image(image.path);
+            const base64Image = await getBase64Image(imagePath);
             
             // 更新模态框内容
             elements.modalImage.src = base64Image;
