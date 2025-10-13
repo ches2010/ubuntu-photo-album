@@ -220,6 +220,9 @@ function initGallery(settings) {
             elements.modalModified.textContent = `修改: ${image.modifiedFormatted}`;
             elements.downloadLink.href = base64Image;
             elements.downloadLink.download = image.filename;
+            
+            // 更新导航按钮状态
+            updateNavigationButtons();
         } catch (error) {
             console.error('加载图片预览失败:', error);
             if (window.app && window.app.showNotification) {
@@ -234,6 +237,27 @@ function initGallery(settings) {
         elements.imageModal.classList.add('active');
         document.body.style.overflow = 'hidden';
     }
+
+    /**
+     * 更新导航按钮状态
+     */
+    function updateNavigationButtons() {
+        const currentIndex = getCurrentImageIndex();
+        const hasOnlyOneImage = galleryState.images.length <= 1;
+        
+        // 禁用/启用导航按钮
+        elements.prevImageBtn.disabled = hasOnlyOneImage;
+        elements.nextImageBtn.disabled = hasOnlyOneImage;
+        
+        // 添加/移除禁用样式
+        if (hasOnlyOneImage) {
+            elements.prevImageBtn.classList.add('disabled');
+            elements.nextImageBtn.classList.add('disabled');
+        } else {
+            elements.prevImageBtn.classList.remove('disabled');
+            elements.nextImageBtn.classList.remove('disabled');
+        }
+    }    
 
     /**
      * 显示模态框加载指示器
@@ -573,6 +597,10 @@ function initGallery(settings) {
             });
         });
 
+        // 上一张/下一张图片按钮
+        elements.prevImageBtn.addEventListener('click', showPreviousImage);
+        elements.nextImageBtn.addEventListener('click', showNextImage);
+        
         // 键盘事件
         document.addEventListener('keydown', handleKeyPress);
 
