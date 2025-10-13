@@ -52,6 +52,11 @@ function initGallery(settings) {
             // 更新网格布局
             elements.gallery.style.gridTemplateColumns = `repeat(${newSettings.imagesPerRow}, 1fr)`;
         }
+        
+        // 从设置中获取每页显示数量
+        if (newSettings && newSettings.imagesPerPage) {
+            galleryState.imagesPerPage = newSettings.imagesPerPage;
+        }
     }
 
     /**
@@ -97,45 +102,6 @@ function initGallery(settings) {
     }
 
     /**
-     * 创建图片元素并添加到画廊
-     * @param {Object} image - 图片信息对象
-     */
-    function addImageToGallery(image) {
-        const gallery = document.getElementById('gallery');
-        if (!gallery) return;
-
-        const imageContainer = document.createElement('div');
-        imageContainer.className = 'gallery-item';
-
-        // 创建图片元素
-        const img = document.createElement('img');
-        img.src = getThumbnail(image.path); // 使用服务器生成的缩略图
-        img.alt = image.name || '图片';
-        img.loading = 'lazy'; // 保持懒加载优化
-        img.dataset.fullImage = `index.php?action=getImage&path=${encodeURIComponent(image.path)}`;
-    
-        // 图片加载错误处理
-        img.addEventListener('error', function() {
-            // 加载失败时显示默认占位图
-            this.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
-        });
-
-        // 点击查看原图
-        img.addEventListener('click', function() {
-            openImageModal(this.dataset.fullImage, image);
-        });
-
-        // 添加图片标题
-        const caption = document.createElement('div');
-        caption.className = 'image-caption';
-        caption.textContent = image.name || '未知图片';
-
-        imageContainer.appendChild(img);
-        imageContainer.appendChild(caption);
-        gallery.appendChild(imageContainer);
-    }
-    
-    /**
      * 渲染画廊
      */
     function renderGallery() {
@@ -154,12 +120,15 @@ function initGallery(settings) {
         galleryState.images.forEach(image => {
             const galleryItem = document.createElement('div');
             galleryItem.className = 'gallery-item';
+            
+            // 使用服务器生成的缩略图URL
             galleryItem.innerHTML = `
                 <img 
-                    src="data:image/jpeg;base64,${getThumbnail(image.fullPath)}" 
-                    alt="${image.name}" 
+                    src="${getThumbnail(image.path)}" 
+                    alt="${escapeHtml(image.name)}" 
                     class="gallery-item-image"
                     loading="lazy"
+                    onload="this.classList.add('loaded')"
                 >
                 <div class="gallery-item-info">
                     <div class="gallery-item-name">${escapeHtml(image.name)}</div>
@@ -176,13 +145,12 @@ function initGallery(settings) {
     }
 
     /**
-     * 获取图片缩略图
+     * 获取图片缩略图URL
      * @param {string} path - 图片路径
-     * @returns {string} 占位的base64字符串
+     * @returns {string} 缩略图URL
      */
     function getThumbnail(path) {
         // 调用服务器接口获取真实缩略图
-        /// 使用encodeURIComponent处理路径中的特殊字符
         return `index.php?action=getThumbnail&path=${encodeURIComponent(path)}`;
     }
 
@@ -201,18 +169,31 @@ function initGallery(settings) {
      * 打开图片预览模态框
      * @param {Object} image - 图片信息对象
      */
-    function openImageModal(image) {
+    async function openImageModal(image) {
         galleryState.currentImage = image;
         resetImageTransform();
 
-        // 更新模态框内容
-        elements.modalImage.src = `data:image/${image.extension};base64,${getBase64Image(image.fullPath)}`;
-        elements.modalTitle.textContent = escapeHtml(image.name);
-        elements.modalSize.textContent = `大小: ${image.sizeFormatted}`;
-        elements.modalDimensions.textContent = `尺寸: ${image.width} × ${image.height}`;
-        elements.modalModified.textContent = `修改: ${image.modifiedFormatted}`;
-        elements.downloadLink.href = `data:image/${image.extension};base64,${getBase64Image(image.fullPath)}`;
-        elements.downloadLink.download = image.filename;
+        // 显示加载状态
+        elements.modalImage.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
+        
+        try {
+            // 获取Base64编码的原图
+            const base64Image = await getBase64Image(image.path);
+            
+            // 更新模态框内容
+            elements.modalImage.src = base64Image;
+            elements.modalTitle.textContent = escapeHtml(image.name);
+            elements.modalSize.textContent = `大小: ${image.sizeFormatted}`;
+            elements.modalDimensions.textContent = `尺寸: ${image.width} × ${image.height}`;
+            elements.modalModified.textContent = `修改: ${image.modifiedFormatted}`;
+            elements.downloadLink.href = base64Image;
+            elements.downloadLink.download = image.filename;
+        } catch (error) {
+            console.error('加载图片预览失败:', error);
+            if (window.app && window.app.showNotification) {
+                window.app.showNotification('无法加载图片: ' + error.message, 'error');
+            }
+        }
 
         // 显示模态框
         elements.imageModal.classList.add('active');
@@ -222,7 +203,7 @@ function initGallery(settings) {
     /**
      * 获取图片的Base64编码
      * @param {string} path - 图片路径
-     * @returns {string} Base64编码字符串
+     * @returns {Promise<string>} 包含Base64编码的Promise对象
      */
     async function getBase64Image(path) {
         try {
@@ -230,7 +211,7 @@ function initGallery(settings) {
             const response = await fetch(`index.php?action=getBase64Image&path=${encodeURIComponent(path)}`);
 
             if (!response.ok) {
-                throw new Error('获取图片失败');
+                throw new Error(`HTTP错误: ${response.status}`);
             }
 
             const result = await response.json();
@@ -244,7 +225,7 @@ function initGallery(settings) {
         } catch (error) {
             console.error('获取Base64图片错误:', error);
             // 失败时返回默认占位图
-            return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+            return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
         }
     }
 
@@ -452,6 +433,8 @@ function initGallery(settings) {
         // 监听设置变化事件
         document.addEventListener('settingsSaved', (e) => {
             updateSettings(e.detail);
+            // 设置变化后重新加载图片
+            loadImages();
         });
     }
 
