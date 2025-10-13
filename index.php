@@ -612,16 +612,24 @@ function formatSize($bytes, $decimals = 2) {
  * @param int $height 缩略图高度
  */
 function generateThumbnail($imagePath, $width = 200, $height = 150) {
+    // 验证原图存在
+    if (!file_exists($imagePath)) {
+        error_log("原图不存在: $imagePath");
+        http_response_code(404);
+        exit;
+    }
+  
     // 获取图片信息
     $info = getimagesize($imagePath);
     if (!$info) {
+        error_log("无法获取图片信息: $imagePath");
         http_response_code(415);
-        echo json_encode(['error' => '无法识别的图片格式']);
         exit;
     }
     
     $mime = $info['mime'];
-    
+    $source = null;
+  
     // 根据图片类型创建原图资源
     switch ($mime) {
         case 'image/jpeg':
@@ -637,14 +645,14 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
             $source = imagecreatefromwebp($imagePath);
             break;
         default:
+            error_log("不支持的图片类型: $mime 路径: $imagePath");
             http_response_code(415);
-            echo json_encode(['error' => '不支持的图片类型: ' . $mime]);
             exit;
     }
     
     if (!$source) {
+        error_log("无法创建图片资源: $imagePath");
         http_response_code(500);
-        echo json_encode(['error' => '无法处理图片']);
         exit;
     }
     
@@ -659,6 +667,12 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
     
     // 创建缩略图资源
     $thumbnail = imagecreatetruecolor($thumbnailWidth, $thumbnailHeight);
+    if (!$thumbnail) {
+        error_log("无法创建缩略图资源: $imagePath");
+        imagedestroy($source);
+        http_response_code(500);
+        exit;
+    }
     
     // 处理透明背景（针对PNG和GIF）
     if ($mime == 'image/png' || $mime == 'image/gif' || $mime == 'image/webp') {
@@ -675,10 +689,10 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
     );
     
     if (!$success) {
-        http_response_code(500);
-        echo json_encode(['error' => '生成缩略图失败']);
+        error_log("缩略图生成失败: $imagePath");
         imagedestroy($source);
         imagedestroy($thumbnail);
+        http_response_code(500);
         exit;
     }
     
