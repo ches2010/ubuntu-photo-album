@@ -103,17 +103,25 @@
     <div id="imageModal" class="modal">
         <div class="modal-content">
             <span class="close-btn">&times;</span>
+            
+            <!-- 上一张/下一张导航按钮 -->
+            <div class="modal-navigation">
+                <button id="prevImageBtn" class="modal-nav-btn prev" title="上一张 (←)">←</button>
+                <button id="nextImageBtn" class="modal-nav-btn next" title="下一张 (→)">→</button>
+            </div>
             <div class="modal-image-container">
-                <button class="modal-btn rotate-left" data-action="rotateLeft" title="向左旋转">↺</button>
+                <button class="modal-btn rotate-left" data-action="rotateLeft" title="向左旋转 (↑)">↺</button>
                 <img id="modalImage" src="" alt="图片预览">
-                <button class="modal-btn rotate-right" data-action="rotateRight" title="向右旋转">↻</button>
+                <button class="modal-btn rotate-right" data-action="rotateRight" title="向右旋转 (↓)">↻</button>
             </div>
+            
             <div class="modal-controls">
-                <button class="modal-btn flip-horizontal" data-action="flipHorizontal" title="水平翻转">⟷</button>
-                <button class="modal-btn flip-vertical" data-action="flipVertical" title="垂直翻转">⟲</button>
+                <button class="modal-btn flip-horizontal" data-action="flipHorizontal" title="水平翻转 (H)">⟷</button>
+                <button class="modal-btn flip-vertical" data-action="flipVertical" title="垂直翻转 (V)">⟲</button>
                 <a id="downloadLink" class="modal-btn download" download title="下载图片">↓ 下载</a>
-                <button class="modal-btn fullscreen" data-action="fullscreen" title="全屏查看">⛶</button>
+                <button class="modal-btn fullscreen" data-action="fullscreen" title="全屏查看 (F)">⛶</button>
             </div>
+            
             <div class="image-info">
                 <h3 id="imageTitle"></h3>
                 <p>
@@ -122,6 +130,10 @@
                     <span id="imageModified"></span>
                 </p>
             </div>
+            
+            <!-- 加载指示器 -->
+            <div id="modalLoader" class="modal-loader">
+                <div class="spinner"></div>
         </div>
     </div>
 
