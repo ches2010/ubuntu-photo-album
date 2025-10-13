@@ -1,58 +1,55 @@
 <?php
-// 测试图片路径
-$testPaths = [
-    '/mnt/sda2/pitrues/Xpic/aa',
-    '/mnt/sda2/pitrues/Xpic/ad'
+$configFile = 'config.json';
+$defaultConfig = [
+    'imagePaths' => ['/mnt/sda2/pitrues/Xpic/aa', '/mnt/sda2/pitrues/Xpic/ad'],
+    'scanSubfolders' => true,
+    'maxDepth' => 0
 ];
 
-echo "开始测试图片访问权限...\n\n";
+// 读取配置
+function loadConfig($file, $default) {
+    if (!file_exists($file)) return $default;
+    $config = json_decode(file_get_contents($file), true);
+    return $config ? array_merge($default, $config) : $default;
+}
 
-foreach ($testPaths as $path) {
-    echo "测试路径: $path\n";
+$config = loadConfig($configFile, $defaultConfig);
+$supportedExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+$images = [];
+
+// 扫描函数
+function scanDir($dir, $base, $exts, $scanSub, $maxDepth, $depth = 0) {
+    $result = [];
+    $items = scandir($dir);
+    if (!$items) return $result;
     
-    // 检查路径是否存在
-    if (!file_exists($path)) {
-        echo "  ❌ 路径不存在\n\n";
-        continue;
-    }
-    
-    // 检查是否为目录
-    if (!is_dir($path)) {
-        echo "  ❌ 不是有效的目录\n\n";
-        continue;
-    }
-    
-    // 检查是否有读取权限
-    if (!is_readable($path)) {
-        echo "  ❌ 没有读取权限\n\n";
-        continue;
-    }
-    
-    // 尝试扫描目录中的图片文件
-    $files = scandir($path);
-    if (!$files) {
-        echo "  ❌ 无法扫描目录内容\n\n";
-        continue;
-    }
-    
-    // 筛选图片文件
-    $imageExts = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
-    $images = [];
-    
-    foreach ($files as $file) {
-        if ($file == '.' || $file == '..') continue;
+    foreach ($items as $item) {
+        if ($item == '.' || $item == '..') continue;
+        $path = $dir . '/' . $item;
         
-        $ext = strtolower(pathinfo($file, PATHINFO_EXTENSION));
-        if (in_array($ext, $imageExts)) {
-            $images[] = $file;
+        if (is_dir($path) && $scanSub && ($maxDepth == 0 || $depth < $maxDepth)) {
+            $result = array_merge($result, scanDir($path, $base, $exts, $scanSub, $maxDepth, $depth + 1));
+        } elseif (is_file($path)) {
+            $ext = strtolower(pathinfo($path, PATHINFO_EXTENSION));
+            if (in_array($ext, $exts)) {
+                $result[] = $path;
+            }
         }
     }
-    
-    if (count($images) > 0) {
-        echo "  ✅ 目录可访问\n";
-        echo "  找到 " . count($images) . " 张图片，示例:\n";
-        echo "  - " . $images[0] . "\n\n";
-    } else {
-        echo "  ℹ️ 目录可访问，但未找到图片文件\n\n";
+    return $result;
+}
+
+// 执行扫描
+foreach ($config['imagePaths'] as $path) {
+    if (is_dir($path)) {
+        $images = array_merge($images, scanDir($path, $path, $supportedExtensions, 
+            $config['scanSubfolders'], $config['maxDepth']));
     }
 }
+
+// 输出结果
+echo "找到 " . count($images) . " 张图片:\n";
+foreach ($images as $img) {
+    echo "- $img\n";
+}
+?>
