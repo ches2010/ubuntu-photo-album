@@ -149,14 +149,14 @@ function initGallery(settings) {
      * @param {string} path - 图片路径
      * @returns {string} 缩略图URL
      */
-    function getThumbnail(path) {
-        // 修复路径编码问题，确保特殊字符正确编码
+    function getThumbnail(path) {        
         try {
-            // 先解码再编码，处理可能的双重编码问题
-            return `index.php?action=getThumbnail&path=${encodeURIComponent(path)}`;
+            // 标准化路径，处理特殊字符
+            const normalizedPath = path.replace(/\\/g, '/').replace(/\/+/g, '/');
+            return `index.php?action=getThumbnail&path=${encodeURIComponent(normalizedPath)}`;
         } catch (e) {
             console.error('路径编码错误:', e);
-            return `index.php?action=getThumbnail&path=${encodeURIComponent(encodeURIComponent(path))}`;
+            return '';
         }
     }
 
@@ -222,7 +222,8 @@ function initGallery(settings) {
     async function getBase64Image(path) {
         try {
             // 调用服务器接口获取Base64编码
-            const response = await fetch(`index.php?action=getBase64Image&path=${encodeURIComponent(path)}`);
+            const normalizedPath = path.replace(/\\/g, '/').replace(/\/+/g, '/');
+            const response = await fetch(`index.php?action=getBase64Image&path=${encodeURIComponent(normalizedPath)}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP错误: ${response.status}`);
