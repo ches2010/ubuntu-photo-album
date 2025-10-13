@@ -95,11 +95,13 @@ ubuntu-photo-album/
 ├── cache/              # 缓存目录
 ├── web/
 │   ├── css/            # 样式表
+│   │   ├── bootstrap.min.css
+│   │   └── styles.css
 │   └── js/             # JavaScript文件
 │       ├── app.js
+│       ├── bootstrap.bundle.min.js
 │       ├── gallery.js
 │       └── settings.js
-└── nginx-example.conf  # Nginx配置示例
 ## 常见问题
 
 ### API返回404错误
