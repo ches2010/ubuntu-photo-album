@@ -4,10 +4,21 @@
  * 处理图片扫描、配置管理和缓存操作
  */
 
-// 在index.php顶部设置
-error_reporting(E_ERROR | E_WARNING | E_PARSE);
+// 调试模式控制
+define('DEBUG', false); // 生产环境关闭调试模式
+
+// 设置PHP错误报告级别
+if (DEBUG) {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 1);
+} else {
+    error_reporting(E_ERROR | E_WARNING);
+    ini_set('display_errors', 0);
+}
+
+// 设置错误日志文件
 ini_set('log_errors', 1);
-ini_set('error_log', '/var/log/php/photo-album.log'); // 单独的日志文件
+ini_set('error_log', '/var/log/php/photo-album.log');
 
 // 先判断是否是默认首页请求（无任何参数）
 $isDefaultRequest = empty($_GET) && 
@@ -130,14 +141,16 @@ function resolveImagePath($userPath) {
     // 标准化路径
     $normalizedPath = str_replace(['\\', '//'], '/', $decodedPath);
     
-    // 记录调试信息
-    error_log("解析图片路径: 用户请求='$normalizedPath'");
+    // 仅在调试模式下记录详细日志
+    if (DEBUG) {
+        error_log("[INFO] 解析图片路径: 用户请求='$normalizedPath'");
+    }
         
     // 尝试每个配置的基础路径
     foreach ($settings['imagePaths'] as $basePath) {
         // 确保基础路径是绝对路径
         if (!is_absolute_path($basePath)) {
-            error_log("警告: 配置路径 '$basePath' 不是绝对路径，已跳过");
+            error_log("[WARNING] 配置路径 '$basePath' 不是绝对路径，已跳过");
             continue;
         }
         
@@ -147,7 +160,9 @@ function resolveImagePath($userPath) {
         
         // 检查文件是否存在且可读
         if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
-            error_log("成功解析路径: $fullPath");
+            if (DEBUG) {
+                error_log("[INFO] 成功解析路径: $fullPath");
+            }
             return $fullPath;
         }
     }
@@ -156,12 +171,14 @@ function resolveImagePath($userPath) {
     if (is_absolute_path($normalizedPath)) {
         $fullPath = realpath($normalizedPath);
         if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
-            error_log("解析成功(绝对路径): '$fullPath'");
+            if (DEBUG) {
+                error_log("[INFO] 解析成功(绝对路径): '$fullPath'");
+            }
             return $fullPath;
         }
     }
         
-    error_log("解析失败: 找不到文件 '$normalizedPath'");
+    error_log("[ERROR] 解析失败: 找不到文件 '$normalizedPath'");
     return false;
 }
 
@@ -186,9 +203,11 @@ function handleGetThumbnail() {
     // 解析并验证图片路径
     $fullImagePath = resolveImagePath($imagePath);
     
-    // 记录调试信息
-    error_log("请求缩略图 - 原始路径: {$imagePath}");
-    error_log("请求缩略图 - 解析后路径: " . ($fullImagePath ?: '无效路径'));
+    // 仅在调试模式下记录详细日志
+    if (DEBUG) {
+        error_log("[INFO] 请求缩略图 - 原始路径: {$imagePath}");
+        error_log("[INFO] 请求缩略图 - 解析后路径: " . ($fullImagePath ?: '无效路径'));
+    }
     
     // 检查文件是否存在且可读
     if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
@@ -390,12 +409,23 @@ function handleSaveSettings() {
  * 处理刷新缓存的请求
  */
 function handleRefreshCache() {
+    // 防止重复清理
+    static $processed = false;
+    if ($processed) {
+        echo json_encode([
+            'success' => true,
+            'message' => '缓存已刷新',
+            'clearedCount' => 0
+        ]);
+        return;
+    }
+    
     // 清除图片缓存
     $fileCount = count(glob($GLOBALS['cacheDir'] . '*'));
     $cacheCleared = clearCache();
   
-    if (clearCache()) {
-        // 主动触发一次图片扫描（可选）
+    if ($cacheCleared) {
+        // 主动触发一次图片扫描
         getImages();
       
         echo json_encode([
@@ -410,6 +440,8 @@ function handleRefreshCache() {
             'success' => false
         ]);
     }
+    
+    $processed = true;
 }
 
 /**
@@ -419,11 +451,15 @@ function getImages($search = '', $sort = 'name_asc') {
     global $cacheDir, $configFile;
     
     $config = loadConfig($configFile);
-    error_log("开始扫描图片，配置路径: " . implode(', ', $config['imagePaths']));
+    if (DEBUG) {
+        error_log("[INFO] 开始扫描图片，配置路径: " . implode(', ', $config['imagePaths']));
+    }
     
     // 强制重新扫描，不使用缓存
     $images = scanImages($config, $search);
-    error_log("扫描完成，找到 " . count($images) . " 张图片");
+    if (DEBUG) {
+        error_log("[INFO] 扫描完成，找到 " . count($images) . " 张图片");
+    }
     
     $images = sortImages($images, $sort);
     return $images;
@@ -604,9 +640,16 @@ function saveConfig($config) {
 function clearCache() {
     global $cacheDir;
     
+    // 防止重复清理
+    static $cleared = false;
+    if ($cleared) {
+        return true;
+    }
+    
     if (!is_dir($cacheDir)) {
         // 如果缓存目录不存在，创建它
         mkdir($cacheDir, 0755, true);
+        $cleared = true;
         return true;
     }
 
@@ -619,13 +662,14 @@ function clearCache() {
     foreach ($files as $fileinfo) {
         $todo = ($fileinfo->isDir() ? 'rmdir' : 'unlink');
         if (!$todo($fileinfo->getRealPath())) {
-            error_log("清除缓存失败: " . $fileinfo->getRealPath());
+            error_log("[ERROR] 清除缓存失败: " . $fileinfo->getRealPath());
             return false;
         }
     }
 
     // 记录缓存清理成功日志
-    error_log("缓存已成功清除");
+    error_log("[INFO] 缓存已成功清除");
+    $cleared = true;
     return true;
 }
 
@@ -687,13 +731,13 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
             $source = imagecreatefromwebp($imagePath);
             break;
         default:
-            error_log("不支持的图片类型: $mime 路径: $imagePath");
+            error_log("[ERROR] 不支持的图片类型: $mime 路径: $imagePath");
             http_response_code(415);
             exit;
     }
     
     if (!$source) {
-        error_log("无法创建图片资源: $imagePath");
+        error_log("[ERROR] 无法创建图片资源: $imagePath");
         http_response_code(500);
         exit;
     }
@@ -710,7 +754,7 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
     // 创建缩略图资源
     $thumbnail = imagecreatetruecolor($thumbnailWidth, $thumbnailHeight);
     if (!$thumbnail) {
-        error_log("无法创建缩略图资源: $imagePath");
+        error_log("[ERROR] 无法创建缩略图资源: $imagePath");
         imagedestroy($source);
         http_response_code(500);
         exit;
@@ -731,17 +775,14 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
     );
     
     if (!$success) {
-        error_log("缩略图生成失败: $imagePath");
+        error_log("[ERROR] 缩略图生成失败: $imagePath");
         imagedestroy($source);
         imagedestroy($thumbnail);
         http_response_code(500);
         exit;
     }
 
-    exit;
-   
-    // 输出缩略图
-    header("Content-Type: $mime");
+    // 输出缩略图（修复之前的exit导致无法输出的问题）
     switch ($mime) {
         case 'image/jpeg':
             imagejpeg($thumbnail, null, 80); // 80% 质量
@@ -760,5 +801,7 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
     // 释放资源
     imagedestroy($source);
     imagedestroy($thumbnail);
+    exit;
 }
 ?>
+    
