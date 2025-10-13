@@ -131,14 +131,13 @@ function resolveImagePath($userPath) {
     $normalizedPath = str_replace(['\\', '//'], '/', $decodedPath);
     
     // 记录调试信息
-    error_log("配置的图片路径: " . implode(', ', $settings['imagePaths']));
-    error_log("用户请求路径: " . $normalizedPath);
-    
+    error_log("解析图片路径: 用户请求='$normalizedPath'");
+        
     // 尝试每个配置的基础路径
     foreach ($settings['imagePaths'] as $basePath) {
         // 确保基础路径是绝对路径
         if (!is_absolute_path($basePath)) {
-            error_log("错误: 配置的路径 '$basePath' 不是绝对路径");
+            error_log("警告: 配置路径 '$basePath' 不是绝对路径，已跳过");
             continue;
         }
         
@@ -150,12 +149,19 @@ function resolveImagePath($userPath) {
         if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
             error_log("成功解析路径: $fullPath");
             return $fullPath;
-        } else {
-            error_log("尝试路径无效: $fullPath");
         }
     }
-    
-    error_log("所有路径尝试失败");
+  
+    // 尝试直接使用用户提供的绝对路径
+    if (is_absolute_path($normalizedPath)) {
+        $fullPath = realpath($normalizedPath);
+        if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
+            error_log("解析成功(绝对路径): '$fullPath'");
+            return $fullPath;
+        }
+    }
+        
+    error_log("解析失败: 找不到文件 '$normalizedPath'");
     return false;
 }
 
@@ -642,9 +648,12 @@ function formatSize($bytes, $decimals = 2) {
  * @param int $height 缩略图高度
  */
 function generateThumbnail($imagePath, $width = 200, $height = 150) {
+    // 清除之前的输出
+    ob_clean();
+    flush();
+  
     // 验证原图存在
-    if (!file_exists($imagePath)) {
-        error_log("原图不存在: $imagePath");
+    if (!file_exists($imagePath) || !is_readable($imagePath)) {
         http_response_code(404);
         exit;
     }
@@ -652,13 +661,16 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
     // 获取图片信息
     $info = getimagesize($imagePath);
     if (!$info) {
-        error_log("无法获取图片信息: $imagePath");
         http_response_code(415);
         exit;
     }
     
     $mime = $info['mime'];
-    $source = null;
+
+    // 输出正确的响应头
+    header("Content-Type: $mime");
+    header("Cache-Control: public, max-age=86400"); // 缓存1天
+    header("Pragma: public");
   
     // 根据图片类型创建原图资源
     switch ($mime) {
@@ -725,7 +737,9 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
         http_response_code(500);
         exit;
     }
-    
+
+    exit;
+   
     // 输出缩略图
     header("Content-Type: $mime");
     switch ($mime) {
