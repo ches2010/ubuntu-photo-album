@@ -126,22 +126,43 @@ function handleGetThumbnail() {
     $imagePath = urldecode($_GET['path']);
     $settings = loadSettings();
     
+    // 调试信息 - 记录请求的路径
+    error_log("请求缩略图: {$imagePath}");
+    
     // 验证图片路径是否在配置的目录中（安全检查）
     $isValid = false;
+    $fullImagePath = realpath($imagePath);
+    
+    // 尝试处理可能的相对路径
+    if (!$fullImagePath) {
+        // 尝试结合文档根目录查找
+        $docRoot = $_SERVER['DOCUMENT_ROOT'] ?? '';
+        $fullImagePath = realpath($docRoot . '/' . $imagePath);
+    }
+    
+    // 记录实际查找的路径
+    error_log("实际查找路径: " . ($fullImagePath ?: '无效路径'));
+    
     foreach ($settings['imagePaths'] as $allowedPath) {
-        // 构建完整路径进行验证
-        $fullAllowedPath = rtrim($allowedPath, '/') . '/';
-        $fullImagePath = realpath($imagePath);
+        $allowedPath = rtrim($allowedPath, '/') . '/';
+        $fullAllowedPath = realpath($allowedPath);
         
-        if ($fullImagePath && strpos($fullImagePath, $fullAllowedPath) === 0) {
+        if ($fullAllowedPath && $fullImagePath && 
+            strpos($fullImagePath, $fullAllowedPath) === 0) {
             $isValid = true;
             break;
         }
     }
 
-    if (!$isValid || !file_exists($imagePath) || !is_readable($imagePath)) {
+    if (!$isValid || !$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
         http_response_code(404);
-        echo json_encode(['error' => '图片不存在或无权访问']);
+        echo json_encode([
+            'error' => '图片不存在或无权访问',
+            'path' => $imagePath,
+            'resolvedPath' => $fullImagePath,
+            'exists' => $fullImagePath ? file_exists($fullImagePath) : false,
+            'readable' => $fullImagePath ? is_readable($fullImagePath) : false
+        ]);
         exit;
     }
 
@@ -150,7 +171,7 @@ function handleGetThumbnail() {
     $height = isset($settings['thumbnailHeight']) ? (int)$settings['thumbnailHeight'] : 150;
     
     // 生成并输出缩略图
-    generateThumbnail($imagePath, $width, $height);
+    generateThumbnail($fullImagePath, $width, $height);
     exit;
 }
 
@@ -420,12 +441,14 @@ function scanImages($config, $search = '') {
 }
 
 /**
- * 扫描目录获取图片
+ * 扫描目录获取图片 - 修复路径处理
  */
 function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $maxDepth = 0, $currentDepth = 0) {
     $images = [];
-    $items = scandir($dir);
+    $dir = rtrim($dir, '/') . '/';
+    $baseDir = rtrim($baseDir, '/') . '/';
     
+    $items = scandir($dir);
     if (!$items) {
         return $images;
     }
@@ -436,8 +459,9 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
             continue;
         }
         
-        $path = $dir . '/' . $item;
-        $relativePath = str_replace($baseDir . '/', '', $path);
+        $path = $dir . $item;
+        // 修复相对路径计算
+        $relativePath = substr($path, strlen($baseDir));
         
         // 如果是目录且允许扫描子目录
         if (is_dir($path) && $scanSubfolders && ($maxDepth == 0 || $currentDepth < $maxDepth)) {
@@ -460,7 +484,7 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
                 $images[] = [
                     'name' => pathinfo($path, PATHINFO_FILENAME),
                     'filename' => pathinfo($path, PATHINFO_BASENAME),
-                    'path' => $relativePath,
+                    'path' => $relativePath,  // 存储正确的相对路径
                     'fullPath' => $path,
                     'size' => $size,
                     'sizeFormatted' => formatSize($size),
