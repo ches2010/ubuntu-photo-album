@@ -394,23 +394,13 @@ function getImages($search = '', $sort = 'name_asc') {
     global $cacheDir, $configFile;
     
     $config = loadConfig($configFile);
-    $cacheKey = 'images_' . md5(json_encode($config) . $search . $sort);
-    $cacheFile = $cacheDir . $cacheKey . '.json';
+    error_log("开始扫描图片，配置路径: " . implode(', ', $config['imagePaths']));
     
-    // 检查缓存是否有效
-    if (file_exists($cacheFile) && time() - filemtime($cacheFile) < $config['cacheTTL']) {
-        return json_decode(file_get_contents($cacheFile), true);
-    }
-    
-    // 缓存无效，重新扫描图片
+    // 强制重新扫描，不使用缓存
     $images = scanImages($config, $search);
+    error_log("扫描完成，找到 " . count($images) . " 张图片");
     
-    // 排序图片
     $images = sortImages($images, $sort);
-    
-    // 保存到缓存
-    file_put_contents($cacheFile, json_encode($images));
-    
     return $images;
 }
 
