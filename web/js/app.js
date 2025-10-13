@@ -59,7 +59,7 @@ document.addEventListener('DOMContentLoaded', function() {
     async function loadSettings() {
         try {
             const response = await fetch('index.php?action=getSettings');
-            if (!response.ok) throw new Error('加载设置失败');
+            if (!response.ok) throw new Error('HTTP状态码: ' + response.status);
             
             appState.settings = await response.json();
             
@@ -67,9 +67,17 @@ document.addEventListener('DOMContentLoaded', function() {
             if (window.initSettings) {
                 window.initSettings(appState.settings);
             }
+            
+            return appState.settings;
         } catch (error) {
             console.error('加载设置错误:', error);
-            showNotification('加载设置失败', 'error');
+            showNotification('加载设置失败: ' + error.message, 'error');
+            // 返回默认设置
+            return {
+                imagesPerRow: 4,
+                imagesPerPage: 20,
+                scanSubfolders: true
+            };
         }
     }
 
@@ -92,8 +100,8 @@ document.addEventListener('DOMContentLoaded', function() {
         
         // 如果切换到画廊，刷新图片列表
         if (view === 'gallery') {
-            if (window.loadGallery) {
-                window.loadGallery();
+            if (window.refreshGallery) {
+                window.refreshGallery();
             }
         } 
         // 如果切换到设置，加载设置
@@ -108,11 +116,19 @@ document.addEventListener('DOMContentLoaded', function() {
      * @param {string} type - 通知类型：success, error, info
      */
     function showNotification(message, type = 'info') {
+        if (!elements.notification) return;
+        
         elements.notification.textContent = message;
         elements.notification.className = 'notification ' + type;
         elements.notification.style.display = 'block';
         
-        setTimeout(() => {
+        // 清除之前的定时器，避免冲突
+        if (appState.notificationTimer) {
+            clearTimeout(appState.notificationTimer);
+        }
+        
+        // 3秒后自动隐藏
+        appState.notificationTimer = setTimeout(() => {
             elements.notification.style.display = 'none';
         }, 3000);
     }
@@ -121,37 +137,46 @@ document.addEventListener('DOMContentLoaded', function() {
      * 显示加载指示器
      */
     function showLoader() {
-        elements.loader.style.display = 'flex';
+        if (elements.loader) {
+            elements.loader.style.display = 'flex';
+            appState.isLoading = true;
+        }
     }
 
     /**
      * 隐藏加载指示器
      */
     function hideLoader() {
-        elements.loader.style.display = 'none';
+        if (elements.loader) {
+            elements.loader.style.display = 'none';
+            appState.isLoading = false;
+        }
     }
 
     /**
      * 刷新缓存并重新加载图片
      */
     async function refreshCache() {
+        // 如果正在加载中，不重复执行
+        if (appState.isLoading) return;
+        
         showLoader();
         try {
             const response = await fetch('index.php?action=refreshCache');
             const result = await response.json();
             
-            if (response.ok) {
+            if (response.ok && result.success) {
                 showNotification('缓存已刷新，正在重新加载图片...', 'success');
                 // 重新加载图片
-                if (window.loadGallery) {
-                    window.loadGallery();
+                if (window.refreshGallery) {
+                    window.refreshGallery();
                 }
             } else {
                 showNotification('刷新缓存失败: ' + (result.error || '未知错误'), 'error');
             }
         } catch (error) {
             console.error('刷新缓存错误:', error);
-            showNotification('刷新缓存时发生错误', 'error');
+            showNotification('刷新缓存时发生错误: ' + error.message, 'error');
         } finally {
             hideLoader();
         }
@@ -180,28 +205,24 @@ document.addEventListener('DOMContentLoaded', function() {
             showNotification('设置已保存', 'success');
             switchView('gallery');
         });
+
+        // 监听窗口关闭事件，清除定时器
+        window.addEventListener('beforeunload', () => {
+            if (appState.notificationTimer) {
+                clearTimeout(appState.notificationTimer);
+            }
+        });
     }
 
-    /**
-     * 初始化应用
-     */
-    function initApp() {
-        setupEventListeners();
-        loadSettings();
-        
-        // 初始化画廊
-        if (window.initGallery) {
-            window.initGallery();
-        }
-        
-        // 暴露方法供其他模块使用
-        window.app = {
-            showNotification,
-            showLoader,
-            hideLoader,
-            switchView
-        };
-    }
+    // 暴露方法供其他模块使用
+    window.app = {
+        showNotification,
+        showLoader,
+        hideLoader,
+        switchView,
+        getSettings: () => ({...appState.settings}), // 返回设置的副本，避免直接修改
+        refreshCache
+    };
 
     // 启动应用
     initApp();
