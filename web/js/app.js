@@ -2,6 +2,14 @@
  * 应用主控制器
  * 负责初始化应用、管理视图切换和全局状态
  */
+// 在app.js中添加
+document.addEventListener('DOMContentLoaded', function() {
+    // 绑定刷新缓存按钮事件
+    const refreshBtn = document.getElementById('refreshBtn');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', refreshCache);
+    }
+});
 document.addEventListener('DOMContentLoaded', function() {
     // 全局状态
     const appState = {
