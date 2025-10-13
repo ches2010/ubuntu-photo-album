@@ -420,8 +420,10 @@ function handleRefreshCache() {
         return;
     }
     
-    // 清除图片缓存
+    // 清除图片缓存前先统计文件数
     $fileCount = count(glob($GLOBALS['cacheDir'] . '*'));
+    
+    // 只调用一次clearCache()并存储结果
     $cacheCleared = clearCache();
   
     if ($cacheCleared) {
@@ -667,7 +669,7 @@ function clearCache() {
         }
     }
 
-    // 记录缓存清理成功日志
+    // 记录缓存清理成功日志（只会输出一次）
     error_log("[INFO] 缓存已成功清除");
     $cleared = true;
     return true;
