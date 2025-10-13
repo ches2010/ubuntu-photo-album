@@ -18,6 +18,11 @@
     box-sizing: border-box;
 }
 
+#refreshBtn {
+    position: relative;
+    z-index: 1000; /* 确保按钮在最上层 */
+}
+
 body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     line-height: 1.6;
