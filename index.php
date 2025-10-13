@@ -380,6 +380,7 @@ function handleSaveSettings() {
  */
 function handleRefreshCache() {
     // 清除图片缓存
+    $fileCount = count(glob($GLOBALS['cacheDir'] . '*'));
     $cacheCleared = clearCache();
   
     if (clearCache()) {
@@ -388,7 +389,8 @@ function handleRefreshCache() {
       
         echo json_encode([
             'success' => true,
-            'message' => '缓存已刷新，共清理 ' . count(glob($GLOBALS['cacheDir'] . '*')) . ' 个文件'
+            'message' => '缓存已刷新，共清理 ' . $fileCount . ' 个文件',
+            'clearedCount' => $fileCount
         ]);
     } else {
         http_response_code(500);
