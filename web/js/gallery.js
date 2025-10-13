@@ -153,11 +153,10 @@ function initGallery(settings) {
         // 修复路径编码问题，确保特殊字符正确编码
         try {
             // 先解码再编码，处理可能的双重编码问题
-            const decodedPath = decodeURIComponent(path);
-            return `index.php?action=getThumbnail&path=${encodeURIComponent(decodedPath)}`;
+            return `index.php?action=getThumbnail&path=${encodeURIComponent(path)}`;
         } catch (e) {
             console.error('路径编码错误:', e);
-            return `index.php?action=getThumbnail&path=${encodeURIComponent(path)}`;
+            return `index.php?action=getThumbnail&path=${encodeURIComponent(encodeURIComponent(path))}`;
         }
     }
 
