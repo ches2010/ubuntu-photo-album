@@ -231,9 +231,6 @@ function handleGetThumbnail() {
 }
 
 /**
- * 处理获取原图的请求
- */
-/**
  * 处理获取图片列表的请求
  */
 function handleGetImages() {
@@ -257,6 +254,11 @@ function handleGetImages() {
         // 从缓存或扫描获取图片
         $images = getImages($search, $sort);
         
+        // 验证图片扫描结果
+        if (!is_array($images)) {
+            throw new Exception('图片扫描返回无效数据');
+        }
+        
         // 分页处理
         $total = count($images);
         $offset = ($page - 1) * $perPage;
@@ -264,6 +266,8 @@ function handleGetImages() {
         
         // 返回正确的JSON响应
         header('Content-Type: application/json; charset=utf-8');
+        // 确保没有之前的输出
+        if (ob_get_length()) ob_clean();
         echo json_encode([
             'images' => $paginatedImages,
             'pagination' => [
@@ -278,6 +282,8 @@ function handleGetImages() {
     } catch (Exception $e) {
         // 捕获所有异常，返回有意义的错误信息
         header('Content-Type: application/json; charset=utf-8');
+        // 清除可能的输出缓冲
+        if (ob_get_length()) ob_clean();
         http_response_code(500);
         echo json_encode([
             'error' => '获取图片列表失败',
