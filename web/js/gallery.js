@@ -70,24 +70,48 @@ function initGallery(settings) {
         }
 
         try {
-            const params = new URLSearchParams({
-                action: 'getImages',
-                page: galleryState.currentPage,
-                perPage: galleryState.imagesPerPage,
-                search: galleryState.searchTerm,
-                sort: galleryState.sortBy
+            const page = Math.max(1, parseInt(galleryState.currentPage) || 1);
+            const perPage = Math.max(1, Math.min(100, parseInt(galleryState.imagesPerPage) || 20));
+            const search = galleryState.searchTerm || '';
+            const sort = galleryState.sortBy || 'name_asc';
+
+            const params = new URLSearchParams({               
+                action: 'getImages', 
+                page: page.toString(),
+                perPage: perPage.toString(),
+                search: search,
+                sort: finalSort
             });
 
             const response = await fetch(`index.php?${params.toString()}`);
-
+                
+            // 处理HTTP错误状态
             if (!response.ok) {
-                throw new Error(`HTTP错误: ${response.status}`);
+                // 尝试解析错误响应
+                let errorDetails = '';
+                try {
+                    const errorData = await response.json();
+                    errorDetails = errorData.error ? `: ${errorData.error}` : '';
+                } catch (e) {
+                    // 非JSON响应
+                }
+                throw new Error(`获取图片列表失败 (HTTP ${response.status})${errorDetails}`);
             }
 
+            // 验证响应内容
+            const contentType = response.headers.get('content-type');
+            if (!contentType || !contentType.includes('application/json')) {
+                throw new Error('服务器返回非JSON数据');
+            }
             const data = await response.json();
 
-            galleryState.images = data.images || [];
-            galleryState.totalPages = data.pagination?.totalPages || 1;
+            // 验证响应结构
+            if (typeof data !== 'object' || !Array.isArray(data.images) || !data.pagination) {
+                throw new Error('服务器返回无效格式');                
+            }
+
+            galleryState.images = data.images;
+            galleryState.totalPages = Math.max(1, data.pagination.totalPages || 1);
 
             renderGallery();
             updatePagination();
@@ -95,6 +119,17 @@ function initGallery(settings) {
             console.error('加载图片错误:', error);
             if (window.app && window.app.showNotification) {
                 window.app.showNotification('加载图片失败: ' + error.message, 'error');
+            }
+            // 显示错误状态的画廊
+            const gallery = document.getElementById('gallery');
+            if (gallery) {
+                gallery.innerHTML = 
+                    <div class="error-state">
+                        <p>无法加载图片列表</p>
+                        <p class="error-message">${error.message}</p>
+                        <button class="retry-btn" onclick="loadImages()">重试</button>
+                    </div>
+                `;
             }
         } finally {
             if (window.app && window.app.hideLoader) {
