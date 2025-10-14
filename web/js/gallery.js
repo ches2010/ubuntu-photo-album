@@ -710,7 +710,7 @@ function initGallery(settings) {
         // 图片操作按钮
         if (elements.modalActions && elements.modalActions.length) {        
             elements.modalActions.forEach(btn => {            
-                btn.addEventListener('click', () =>                 
+                btn.addEventListener('click', () => {               
                     const action = btn.getAttribute('data-action');               
                     handleImageAction(action);            
                 });
