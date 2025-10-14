@@ -123,7 +123,7 @@ function initGallery(settings) {
             // 显示错误状态的画廊
             const gallery = document.getElementById('gallery');
             if (gallery) {
-                gallery.innerHTML = 
+                gallery.innerHTML = ` 
                     <div class="error-state">
                         <p>无法加载图片列表</p>
                         <p class="error-message">${error.message}</p>
