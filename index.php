@@ -4,8 +4,8 @@
  * 处理图片扫描、配置管理和缓存操作
  */
 
-// 调试模式控制
-define('DEBUG', false); // 生产环境关闭调试模式
+// 调试模式控制 - 开启调试以查看详细错误
+define('DEBUG', true);
 
 // 设置PHP错误报告级别
 if (DEBUG) {
@@ -19,6 +19,12 @@ if (DEBUG) {
 // 设置错误日志文件
 ini_set('log_errors', 1);
 ini_set('error_log', '/var/log/php/photo-album.log');
+
+// 确保必要目录存在
+$cacheDir = 'cache/';
+if (!is_dir($cacheDir)) {
+    mkdir($cacheDir, 0755, true);
+}
 
 // 先判断是否是默认首页请求（无任何参数）
 $isDefaultRequest = empty($_GET) && 
@@ -52,12 +58,6 @@ $action = $_GET['action'] ?? ($isDefaultRequest ? 'default' : 'invalid');
 
 // 数据库和配置初始化
 $configFile = 'config.json';
-$cacheDir = 'cache/';
-
-// 确保缓存目录存在
-if (!is_dir($cacheDir)) {
-    mkdir($cacheDir, 0755, true);
-}
 
 // 默认配置
 $defaultConfig = [
@@ -124,67 +124,107 @@ function init() {
             break;
         default:
             http_response_code(400);
-            echo json_encode(['error' => '无效的请求动作']);
+            echo json_encode(['error' => '无效的请求动作: ' . $action]);
             break;
     }
 }
 
 /**
- * 解析并验证图片路径
+ * 处理获取图片列表的请求
  */
-function resolveImagePath($userPath) {
-    global $configFile;
-    
-    $settings = loadConfig($configFile);
-    $decodedPath = urldecode($userPath);
-    
-    // 标准化路径
-    $normalizedPath = str_replace(['\\', '//'], '/', $decodedPath);
-    
-    // 仅在调试模式下记录详细日志
-    if (DEBUG) {
-        error_log("[INFO] 解析图片路径: 用户请求='$normalizedPath'");
-    }
+function handleGetImages() {
+    try {
+        // 验证并处理分页参数
+        $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $perPage = isset($_GET['perPage']) ? (int)$_GET['perPage'] : 20;
+        $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+        $sort = isset($_GET['sort']) ? $_GET['sort'] : 'name_asc';
         
-    // 尝试每个配置的基础路径
-    foreach ($settings['imagePaths'] as $basePath) {
-        // 确保基础路径是绝对路径
-        if (!is_absolute_path($basePath)) {
-            error_log("[WARNING] 配置路径 '$basePath' 不是绝对路径，已跳过");
-            continue;
+        // 验证参数有效性
+        if ($page < 1) $page = 1;
+        if ($perPage < 1 || $perPage > 100) $perPage = 20;
+        
+        // 验证排序参数
+        $validSorts = ['name_asc', 'name_desc', 'date_asc', 'date_desc', 'size_asc', 'size_desc'];
+        if (!in_array($sort, $validSorts)) {
+            $sort = 'name_asc';
         }
         
-        $basePath = rtrim($basePath, '/');
-        $fullPath = $basePath . '/' . $normalizedPath;
-        $fullPath = realpath($fullPath);
+        // 从缓存或扫描获取图片
+        $images = getImages($search, $sort);
         
-        // 检查文件是否存在且可读
-        if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
-            if (DEBUG) {
-                error_log("[INFO] 成功解析路径: $fullPath");
-            }
-            return $fullPath;
-        }
-    }
-  
-    // 尝试直接使用用户提供的绝对路径
-    if (is_absolute_path($normalizedPath)) {
-        $fullPath = realpath($normalizedPath);
-        if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
-            if (DEBUG) {
-                error_log("[INFO] 解析成功(绝对路径): '$fullPath'");
-            }
-            return $fullPath;
-        }
-    }
+        // 分页处理
+        $total = count($images);
+        $offset = ($page - 1) * $perPage;
+        $paginatedImages = array_slice($images, $offset, $perPage);
         
-    error_log("[ERROR] 解析失败: 找不到文件 '$normalizedPath'");
-    return false;
+        // 返回正确的JSON响应
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'images' => $paginatedImages,
+            'pagination' => [
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalPages' => ceil($total / $perPage)
+            ]
+        ]);
+        exit;
+        
+    } catch (Exception $e) {
+        // 捕获所有异常，返回详细错误信息
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(500);
+        echo json_encode([
+            'error' => '获取图片列表失败',
+            'details' => DEBUG ? $e->getMessage() : '内部服务器错误'
+        ]);
+        exit;
+    }
 }
 
-// 辅助函数：检查是否为绝对路径
-function is_absolute_path($path) {
-    return strpos($path, '/') === 0 || preg_match('/^[A-Za-z]:\\\/', $path);
+/**
+ * 处理获取原图的请求
+ */
+function handleGetImage() {
+    try {
+        if (!isset($_GET['path'])) {
+            http_response_code(400);
+            echo json_encode(['error' => '缺少图片路径参数']);
+            exit;
+        }
+        
+        $imagePath = $_GET['path'];
+        $settings = loadSettings();
+        
+        // 解析并验证图片路径
+        $fullImagePath = resolveImagePath($imagePath);
+        
+        // 检查文件是否存在且可读
+        if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
+            http_response_code(404);
+            echo json_encode([
+                'error' => '图片不存在或无权访问',
+                'requestedPath' => $imagePath,
+                'resolvedPath' => $fullImagePath
+            ]);
+            exit;
+        }
+        
+        // 输出原图
+        $mimeType = mime_content_type($fullImagePath);
+        header("Content-Type: $mimeType");
+        header("Content-Length: " . filesize($fullImagePath));
+        readfile($fullImagePath);
+        exit;
+    } catch (Exception $e) {
+        http_response_code(500);
+        echo json_encode([
+            'error' => '获取图片失败',
+            'details' => DEBUG ? $e->getMessage() : ''
+        ]);
+        exit;
+    }
 }
 
 /**
@@ -203,20 +243,13 @@ function handleGetThumbnail() {
     // 解析并验证图片路径
     $fullImagePath = resolveImagePath($imagePath);
     
-    // 仅在调试模式下记录详细日志
-    if (DEBUG) {
-        error_log("[INFO] 请求缩略图 - 原始路径: {$imagePath}");
-        error_log("[INFO] 请求缩略图 - 解析后路径: " . ($fullImagePath ?: '无效路径'));
-    }
-    
     // 检查文件是否存在且可读
     if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
         http_response_code(404);
         echo json_encode([
             'error' => '图片不存在或无权访问',
             'requestedPath' => $imagePath,
-            'resolvedPath' => $fullImagePath,
-            'exists' => $fullImagePath ? file_exists($fullImagePath) : false
+            'resolvedPath' => $fullImagePath
         ]);
         exit;
     }
@@ -228,69 +261,6 @@ function handleGetThumbnail() {
     // 生成并输出缩略图
     generateThumbnail($fullImagePath, $width, $height);
     exit;
-}
-
-/**
- * 处理获取图片列表的请求
- */
-function handleGetImages() {
-    try {
-        // 验证并处理分页参数
-        $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-        $perPage = isset($_GET['perPage']) ? (int)$_GET['perPage'] : 20;
-        $search = isset($_GET['search']) ? trim($_GET['search']) : '';
-        $sort = isset($_GET['sort']) ? $_GET['sort'] : 'name_asc';
-        
-        // 验证参数有效性
-        if ($page < 1) $page = 1;
-        if ($perPage < 1 || $perPage > 100) $perPage = 20; // 限制每页最大数量
-        
-        // 验证排序参数
-        $validSorts = ['name_asc', 'name_desc', 'date_asc', 'date_desc', 'size_asc', 'size_desc'];
-        if (!in_array($sort, $validSorts)) {
-            $sort = 'name_asc'; // 使用默认排序
-        }
-        
-        // 从缓存或扫描获取图片
-        $images = getImages($search, $sort);
-        
-        // 验证图片扫描结果
-        if (!is_array($images)) {
-            throw new Exception('图片扫描返回无效数据');
-        }
-        
-        // 分页处理
-        $total = count($images);
-        $offset = ($page - 1) * $perPage;
-        $paginatedImages = array_slice($images, $offset, $perPage);
-        
-        // 返回正确的JSON响应
-        header('Content-Type: application/json; charset=utf-8');
-        // 确保没有之前的输出
-        if (ob_get_length()) ob_clean();
-        echo json_encode([
-            'images' => $paginatedImages,
-            'pagination' => [
-                'total' => $total,
-                'page' => $page,
-                'perPage' => $perPage,
-                'totalPages' => ceil($total / $perPage)
-            ]
-        ]);
-        exit;
-        
-    } catch (Exception $e) {
-        // 捕获所有异常，返回有意义的错误信息
-        header('Content-Type: application/json; charset=utf-8');
-        // 清除可能的输出缓冲
-        if (ob_get_length()) ob_clean();
-        http_response_code(500);
-        echo json_encode([
-            'error' => '获取图片列表失败',
-            'details' => DEBUG ? $e->getMessage() : '内部服务器错误'
-        ]);
-        exit;
-    }
 }
 
 /**
@@ -348,35 +318,6 @@ function handleGetBase64Image() {
         'size' => filesize($fullImagePath)
     ]);
     exit;
-}
-
-/**
- * 处理获取图片列表的请求
- */
-function handleGetImages() {
-    $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-    $perPage = isset($_GET['perPage']) ? (int)$_GET['perPage'] : 20;
-    $search = isset($_GET['search']) ? $_GET['search'] : '';
-    $sort = isset($_GET['sort']) ? $_GET['sort'] : 'name_asc';
-    
-    // 从缓存或扫描获取图片
-    $images = getImages($search, $sort);
-    
-    // 分页处理
-    $total = count($images);
-    $offset = ($page - 1) * $perPage;
-    $paginatedImages = array_slice($images, $offset, $perPage);
-    
-    // 返回结果
-    echo json_encode([
-        'images' => $paginatedImages,
-        'pagination' => [
-            'total' => $total,
-            'page' => $page,
-            'perPage' => $perPage,
-            'totalPages' => ceil($total / $perPage)
-        ]
-    ]);
 }
 
 /**
@@ -475,24 +416,81 @@ function handleRefreshCache() {
 }
 
 /**
+ * 解析并验证图片路径
+ */
+function resolveImagePath($userPath) {
+    global $configFile;
+    
+    try {
+        $settings = loadConfig($configFile);
+        $decodedPath = urldecode($userPath);
+        $normalizedPath = str_replace(['\\', '//'], '/', $decodedPath);
+        
+        if (DEBUG) {
+            error_log("[INFO] 解析图片路径: 用户请求='$normalizedPath'");
+        }
+        
+        foreach ($settings['imagePaths'] as $basePath) {
+            if (!is_absolute_path($basePath)) {
+                error_log("[WARNING] 配置路径 '$basePath' 不是绝对路径，已跳过");
+                continue;
+            }
+            
+            $basePath = rtrim($basePath, '/');
+            $fullPath = $basePath . '/' . $normalizedPath;
+            $fullPath = realpath($fullPath);
+            
+            if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
+                if (DEBUG) {
+                    error_log("[INFO] 成功解析路径: $fullPath");
+                }
+                return $fullPath;
+            }
+        }
+      
+        // 尝试直接使用用户提供的绝对路径
+        if (is_absolute_path($normalizedPath)) {
+            $fullPath = realpath($normalizedPath);
+            if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
+                if (DEBUG) {
+                    error_log("[INFO] 解析成功(绝对路径): '$fullPath'");
+                }
+                return $fullPath;
+            }
+        }
+        
+        error_log("[ERROR] 解析失败: 找不到文件 '$normalizedPath'");
+        return false;
+    } catch (Exception $e) {
+        error_log("[ERROR] 路径解析错误: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
  * 获取图片列表（从缓存或扫描）
  */
 function getImages($search = '', $sort = 'name_asc') {
     global $cacheDir, $configFile;
     
-    $config = loadConfig($configFile);
-    if (DEBUG) {
-        error_log("[INFO] 开始扫描图片，配置路径: " . implode(', ', $config['imagePaths']));
+    try {
+        $config = loadConfig($configFile);
+        if (DEBUG) {
+            error_log("[INFO] 开始扫描图片，配置路径: " . implode(', ', $config['imagePaths']));
+        }
+        
+        // 强制重新扫描，不使用缓存
+        $images = scanImages($config, $search);
+        if (DEBUG) {
+            error_log("[INFO] 扫描完成，找到 " . count($images) . " 张图片");
+        }
+        
+        $images = sortImages($images, $sort);
+        return $images;
+    } catch (Exception $e) {
+        error_log("[ERROR] 获取图片列表错误: " . $e->getMessage());
+        return [];
     }
-    
-    // 强制重新扫描，不使用缓存
-    $images = scanImages($config, $search);
-    if (DEBUG) {
-        error_log("[INFO] 扫描完成，找到 " . count($images) . " 张图片");
-    }
-    
-    $images = sortImages($images, $sort);
-    return $images;
 }
 
 /**
@@ -539,7 +537,7 @@ function scanImages($config, $search = '') {
 }
 
 /**
- * 扫描目录获取图片 - 修复路径处理
+ * 扫描目录获取图片
  */
 function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $maxDepth = 0, $currentDepth = 0) {
     $images = [];
@@ -558,7 +556,7 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
         }
         
         $path = $dir . $item;
-        // 修复相对路径计算
+        // 计算相对路径
         $relativePath = substr($path, strlen($baseDir));
         
         // 如果是目录且允许扫描子目录
@@ -585,7 +583,7 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
                 $images[] = [
                     'name' => pathinfo($path, PATHINFO_FILENAME),
                     'filename' => pathinfo($path, PATHINFO_BASENAME),
-                    'path' => $relativePath,  // 存储正确的相对路径
+                    'path' => $relativePath,
                     'fullPath' => $path,
                     'size' => $size,
                     'sizeFormatted' => formatSize($size),
@@ -632,94 +630,7 @@ function sortImages($images, $sort) {
 }
 
 /**
- * 加载配置
- */
-function loadConfig($file) {
-    global $defaultConfig;
-    
-    if (!file_exists($file)) {
-        file_put_contents($file, json_encode($defaultConfig, JSON_PRETTY_PRINT));
-        return $defaultConfig;
-    }
-    
-    $config = json_decode(file_get_contents($file), true);
-    return $config ? array_merge($defaultConfig, $config) : $defaultConfig;
-}
-
-/**
- * 加载设置（用于缩略图等功能）
- */
-function loadSettings() {
-    global $configFile;
-    return loadConfig($configFile);
-}
-
-/**
- * 保存配置
- */
-function saveConfig($config) {
-    global $configFile;
-    
-    $content = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
-    return file_put_contents($configFile, $content) !== false;
-}
-
-/**
- * 清除缓存
- */
-function clearCache() {
-    global $cacheDir;
-    
-    // 防止重复清理
-    static $cleared = false;
-    if ($cleared) {
-        return true;
-    }
-    
-    if (!is_dir($cacheDir)) {
-        // 如果缓存目录不存在，创建它
-        mkdir($cacheDir, 0755, true);
-        $cleared = true;
-        return true;
-    }
-
-    // 清除所有缓存文件
-    $files = new RecursiveIteratorIterator(
-        new RecursiveDirectoryIterator($cacheDir, RecursiveDirectoryIterator::SKIP_DOTS),
-        RecursiveIteratorIterator::CHILD_FIRST
-    );
-  
-    foreach ($files as $fileinfo) {
-        $todo = ($fileinfo->isDir() ? 'rmdir' : 'unlink');
-        if (!$todo($fileinfo->getRealPath())) {
-            error_log("[ERROR] 清除缓存失败: " . $fileinfo->getRealPath());
-            return false;
-        }
-    }
-
-    // 记录缓存清理成功日志（只会输出一次）
-    error_log("[INFO] 缓存已成功清除");
-    $cleared = true;
-    return true;
-}
-
-/**
- * 格式化文件大小
- */
-function formatSize($bytes, $decimals = 2) {
-    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
-    $bytes = max($bytes, 0);
-    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
-    $pow = min($pow, count($units) - 1);
-    
-    return round($bytes / (1024 ** $pow), $decimals) . ' ' . $units[$pow];
-}
-
-/**
  * 生成并输出图片缩略图
- * @param string $imagePath 原始图片路径
- * @param int $width 缩略图宽度
- * @param int $height 缩略图高度
  */
 function generateThumbnail($imagePath, $width = 200, $height = 150) {
     // 清除之前的输出
@@ -812,7 +723,7 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
         exit;
     }
 
-    // 输出缩略图（修复之前的exit导致无法输出的问题）
+    // 输出缩略图
     switch ($mime) {
         case 'image/jpeg':
             imagejpeg($thumbnail, null, 80); // 80% 质量
@@ -832,6 +743,97 @@ function generateThumbnail($imagePath, $width = 200, $height = 150) {
     imagedestroy($source);
     imagedestroy($thumbnail);
     exit;
+}
+
+/**
+ * 加载配置
+ */
+function loadConfig($file) {
+    global $defaultConfig;
+    
+    if (!file_exists($file)) {
+        file_put_contents($file, json_encode($defaultConfig, JSON_PRETTY_PRINT));
+        return $defaultConfig;
+    }
+    
+    $config = json_decode(file_get_contents($file), true);
+    return $config ? array_merge($defaultConfig, $config) : $defaultConfig;
+}
+
+/**
+ * 加载设置（用于缩略图等功能）
+ */
+function loadSettings() {
+    global $configFile;
+    return loadConfig($configFile);
+}
+
+/**
+ * 保存配置
+ */
+function saveConfig($config) {
+    global $configFile;
+    
+    $content = json_encode($config, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE);
+    return file_put_contents($configFile, $content) !== false;
+}
+
+/**
+ * 清除缓存
+ */
+function clearCache() {
+    global $cacheDir;
+    
+    // 防止重复清理
+    static $cleared = false;
+    if ($cleared) {
+        return true;
+    }
+    
+    if (!is_dir($cacheDir)) {
+        // 如果缓存目录不存在，创建它
+        mkdir($cacheDir, 0755, true);
+        $cleared = true;
+        return true;
+    }
+
+    // 清除所有缓存文件
+    $files = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($cacheDir, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+  
+    foreach ($files as $fileinfo) {
+        $todo = ($fileinfo->isDir() ? 'rmdir' : 'unlink');
+        if (!$todo($fileinfo->getRealPath())) {
+            error_log("[ERROR] 清除缓存失败: " . $fileinfo->getRealPath());
+            return false;
+        }
+    }
+
+    // 记录缓存清理成功日志
+    error_log("[INFO] 缓存已成功清除");
+    $cleared = true;
+    return true;
+}
+
+/**
+ * 格式化文件大小
+ */
+function formatSize($bytes, $decimals = 2) {
+    $units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    $bytes = max($bytes, 0);
+    $pow = floor(($bytes ? log($bytes) : 0) / log(1024));
+    $pow = min($pow, count($units) - 1);
+    
+    return round($bytes / (1024 ** $pow), $decimals) . ' ' . $units[$pow];
+}
+
+/**
+ * 辅助函数：检查是否为绝对路径
+ */
+function is_absolute_path($path) {
+    return strpos($path, '/') === 0 || preg_match('/^[A-Za-z]:\\\/', $path);
 }
 ?>
     
