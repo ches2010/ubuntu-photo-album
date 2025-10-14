@@ -699,13 +699,15 @@ function initGallery(settings) {
             closeBtn.addEventListener('click', closeImageModal);
         }
 
-        // 点击模态框背景关闭
-        elements.imageModal.addEventListener('click', (e) => {
-            // 检查点击的是模态框背景而非内容
-            if (e.target === elements.imageModal) {
-                closeImageModal();
-            }
-        });
+        // 点击模态框背景关闭 - 添加存在性检查
+        if (elements.imageModal) {
+            elements.imageModal.addEventListener('click', (e) => {
+                // 检查点击的是模态框背景而非内容
+                if (e.target === elements.imageModal) {
+                    closeImageModal();
+                }
+            });
+        }
 
         // 图片操作按钮
         if (elements.modalActions && elements.modalActions.length) {        
@@ -717,16 +719,20 @@ function initGallery(settings) {
             });
         }
 
-        // 上一张/下一张图片按钮
-        elements.prevImageBtn.addEventListener('click', showPreviousImage);
-        elements.nextImageBtn.addEventListener('click', showNextImage);
+        // 上一张/下一张图片按钮 - 修复：添加存在性检查
+        if (elements.prevImageBtn) {
+            elements.prevImageBtn.addEventListener('click', showPreviousImage);
+        }
+        if (elements.nextImageBtn) {
+            elements.nextImageBtn.addEventListener('click', showNextImage);
+        }
         
         // 键盘事件
         document.addEventListener('keydown', handleKeyPress);
 
-        // 监听全屏状态变化
+        // 监听全屏状态变化 - 添加存在性检查
         document.addEventListener('fullscreenchange', () => {
-            if (!document.fullscreenElement) {
+            if (!document.fullscreenElement && elements.imageModal) {
                 elements.imageModal.classList.remove('fullscreen');
             }
         });
