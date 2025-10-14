@@ -142,48 +142,116 @@ function initGallery(settings) {
      * 渲染画廊
      */
     function renderGallery() {
-        elements.gallery.innerHTML = '';
+        // 1. 检查画廊容器是否存在
+        if (!elements.gallery) {
+            console.error('画廊容器不存在，请检查HTML中的#gallery元素');
+            return;
+        }
 
-        if (galleryState.images.length === 0) {
+        // 2. 清空画廊并显示加载状态
+        elements.gallery.innerHTML = '<div class="gallery-loading"><i class="fas fa-spinner fa-spin"></i> 加载图片中...</div>';
+
+        // 3. 验证图片数据格式
+        if (!Array.isArray(galleryState.images)) {
             elements.gallery.innerHTML = `
                 <div class="no-images">
-                    <p>没有找到图片</p>
-                    ${galleryState.searchTerm ? `<p>尝试修改搜索条件或检查图片路径设置</p>` : ''}
+                    <p>图片数据格式错误</p>
+                    <p>请刷新页面重试</p>
+                    <button class="refresh-btn" onclick="window.refreshGallery()">
+                        <i class="fas fa-sync-alt"></i> 刷新
+                    </button>
                 </div>
             `;
             return;
         }
 
-        galleryState.images.forEach(image => {
+        // 4. 处理无图片情况
+        if (galleryState.images.length === 0) {
+            elements.gallery.innerHTML = `
+                <div class="no-images">
+                    <p>没有找到图片</p>
+                    ${galleryState.searchTerm ? 
+                        `<p>尝试修改搜索条件</p>` : 
+                        `<p>请检查设置中的图片路径</p>`
+                    }
+                    <button class="refresh-btn" onclick="window.refreshGallery()">
+                        <i class="fas fa-sync-alt"></i> 刷新图片
+                    </button>
+                </div>
+            `;
+            return;
+        }
+
+        // 5. 使用文档片段优化性能（减少DOM重绘）
+        const fragment = document.createDocumentFragment();
+
+        // 6. 渲染图片列表
+        galleryState.images.forEach((image, index) => {
+            // 验证图片对象完整性
+            if (!image || !image.path || !image.name) {
+                console.warn('跳过无效的图片数据:', image);
+                return;
+            }
+
             const galleryItem = document.createElement('div');
             galleryItem.className = 'gallery-item';
             
-            // 使用服务器生成的缩略图URL，添加新图片标记
+            // 确保路径正确编码（修复特殊字符问题）
+            let thumbnailUrl;
+            try {
+                const encodedPath = encodeURIComponent(image.path);
+                thumbnailUrl = `index.php?action=getThumbnail&path=${encodedPath}`;
+            } catch (e) {
+                console.error('图片路径编码失败:', e, image.path);
+                thumbnailUrl = 'web/images/error-placeholder.png';
+            }
+            
+            // 构建图片元素
             galleryItem.innerHTML = `
                 <div class="gallery-item-image-container">
                     <img 
-                        src="${getThumbnail(image.path)}" 
-                        alt="${escapeHtml(image.name)}" 
+                        src="${thumbnailUrl}" 
+                        alt="${escapeHtml(image.name || '未命名图片')}" 
                         class="gallery-item-image"
                         loading="lazy"
-                        onload="this.classList.add('loaded')"
-                        onerror="this.src='web/images/error-placeholder.png'"
+                        data-index="${index}"
+                        data-path="${escapeHtml(image.path)}"
                     >
                     ${image.isNew ? '<span class="new-badge">新</span>' : ''}
                     <div class="image-loading-indicator"></div>
                 </div>
                 <div class="gallery-item-info">
-                    <div class="gallery-item-name">${truncateText(escapeHtml(image.name), 20)}</div>
+                    <div class="gallery-item-name">${truncateText(escapeHtml(image.name || '未命名图片'), 20)}</div>
                     <div class="gallery-item-meta">
-                        <span>${image.sizeFormatted}</span>
-                        <span>${new Date(image.modified * 1000).toLocaleDateString()}</span>
+                        <span>${image.sizeFormatted || '未知大小'}</span>
+                        <span>${image.modified ? new Date(image.modified * 1000).toLocaleDateString() : '未知时间'}</span>
                     </div>
                 </div>
             `;
 
-            galleryItem.addEventListener('click', () => openImageModal(image));
-            elements.gallery.appendChild(galleryItem);
+            // 7. 增强图片加载错误处理
+            const imgElement = galleryItem.querySelector('img');
+            imgElement.addEventListener('error', function() {
+                console.error(`无法加载缩略图: ${thumbnailUrl}`);
+                this.src = 'web/images/error-placeholder.png';
+                // 显示错误提示
+                const errorMsg = document.createElement('div');
+                errorMsg.className = 'image-error-msg';
+                errorMsg.textContent = '图片加载失败';
+                this.parentNode.appendChild(errorMsg);
+            });
+
+            // 8. 修复点击事件，传递正确索引
+            galleryItem.addEventListener('click', () => {
+                openImageModal(galleryState.images, index);
+            });
+
+            fragment.appendChild(galleryItem);
         });
+
+        // 9. 一次性添加所有图片到DOM
+        elements.gallery.innerHTML = '';
+        elements.gallery.appendChild(fragment);
     }
 
     /**
