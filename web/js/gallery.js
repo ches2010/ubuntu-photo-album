@@ -42,7 +42,9 @@ function initGallery(settings) {
         modalModified: document.getElementById('imageModified') || {},
         downloadLink: document.getElementById('downloadLink') || {},
         modalActions: document.querySelectorAll('.modal-btn[data-action]') || {},
-        modalLoader: document.getElementById('modalLoader') // 新增：模态框加载指示器
+        modalLoader: document.getElementById('modalLoader'),
+        prevImageBtn: document.getElementById('prevImage'),
+        nextImageBtn: document.getElementById('nextImage')
     };
 
     /**
@@ -74,6 +76,9 @@ function initGallery(settings) {
             const perPage = Math.max(1, Math.min(100, parseInt(galleryState.imagesPerPage) || 20));
             const search = galleryState.searchTerm || '';
             const sort = galleryState.sortBy || 'name_asc';
+
+            const validSorts = ['name_asc', 'name_desc', 'date_asc', 'date_desc', 'size_asc', 'size_desc'];
+            const finalSort = validSorts.includes(sort) ? sort : 'name_asc';
 
             const params = new URLSearchParams({               
                 action: 'getImages', 
@@ -749,6 +754,7 @@ function initGallery(settings) {
     setupEventListeners();
 
     // 暴露一些方法供其他模块使用
+    window.loadImages = loadImages;
     window.refreshGallery = loadImages;
 
     // 初始加载图片
