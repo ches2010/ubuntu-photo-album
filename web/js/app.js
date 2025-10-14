@@ -28,29 +28,61 @@ document.addEventListener('DOMContentLoaded', function() {
         showLoader();
         
         try {
-            // 加载设置
+            // 1. 先加载设置（确保画廊有必要的配置）
             const response = await fetch('index.php?action=getSettings');
-            if (!response.ok) throw new Error('加载设置失败');
+            if (!response.ok) throw new Error('加载设置失败: HTTP ' + response.status);
 
             appState.settings = await response.json();
+            console.log('设置加载完成:', appState.settings);
             
-            // 初始化子模块
-            if (typeof initGallery === 'function') {
-                initGallery(appState.settings);
+            // 2. 验证必要的设置项
+            if (!appState.settings.imagePaths || appState.settings.imagePaths.length === 0) {
+                throw new Error('未配置图片路径，请在设置中添加图片文件夹');
             }
-            
+
+            // 3. 确保gallery.js已加载并暴露必要方法
+            if (typeof initGallery === 'function') {
+                throw new Error('画廊模块未加载，请检查gallery.js是否正确引入');
+            }
+
+            // 4. 初始化画廊并传递完整设置
+            initGallery(appState.settings);
+
+            // 5. 显式触发图片加载（关键修复：确保初始化后立即加载图片）
+            if (window.refreshGallery) {
+                console.log('主动触发图片加载');
+                window.refreshGallery();
+            } else {
+                throw new Error('未找到刷新画廊的方法');
+            }
+
+            // 6. 初始化其他模块
             if (typeof initSettings === 'function') {
                 initSettings(appState.settings);
             }
             
-            // 设置事件监听
+            // 7. 设置事件监听
             setupEventListeners();
             
-            // 显示初始视图
+            // 8. 显示初始视图
             switchView(appState.currentView);
         } catch (error) {
-            showNotification('应用初始化失败: ' + error.message, 'error');
             console.error('初始化错误:', error);
+            showNotification('应用初始化失败: ' + error.message, 'error');
+
+            // 显示错误页面和重试按钮
+            const errorContainer = document.createElement('div');
+            errorContainer.className = 'initialization-error';
+            errorContainer.innerHTML = `
+                <h3>应用加载失败</h3>
+                <p>${error.message}</p>
+                <button id="retryInitBtn" class="btn">重新初始化</button>
+            `;
+            document.body.appendChild(errorContainer);
+            document.getElementById('retryInitBtn').addEventListener('click', () => {
+                errorContainer.remove();
+                initApp();
+            });
         } finally {
             hideLoader();
         }
@@ -77,8 +109,7 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
-     * 切换视图
-     * @param {string} viewName - 视图名称 ('gallery' 或 'settings')
+     * 切换视图 - 修复画廊视图切换时的图片加载
      */
     function switchView(view) {
         if (view === appState.currentView) return;
@@ -86,22 +117,29 @@ document.addEventListener('DOMContentLoaded', function() {
         appState.currentView = view;
         
         // 更新视图显示状态
-        elements.galleryView.classList.toggle('active', view === 'gallery');
-        elements.settingsView.classList.toggle('active', view === 'settings');
+        if (elements.galleryView) {
+            elements.galleryView.classList.toggle('active', view === 'gallery');
+        }
+        if (elements.settingsView) {
+            elements.settingsView.classList.toggle('active', view === 'settings');
+        }
         
         // 更新按钮状态
-        elements.galleryBtn.classList.toggle('active', view === 'gallery');
-        elements.settingsBtn.classList.toggle('active', view === 'settings');
+        if (elements.galleryBtn) {
+            elements.galleryBtn.classList.toggle('active', view === 'gallery');
+        }
+        if (elements.settingsBtn) {
+            elements.settingsBtn.classList.toggle('active', view === 'settings');
+        }
         
-        // 如果切换到画廊，刷新图片列表
+        // 切换到画廊时强制刷新图片（关键修复）
         if (view === 'gallery') {
-            if (window.loadGallery) {
-                window.loadGallery();
+            console.log('切换到画廊视图，刷新图片');
+            if (window.refreshGallery) {
+                window.refreshGallery();
+            } else if (window.loadGallery) {
+                window.loadGallery(1);
             }
-        } 
-        // 如果切换到设置，加载设置
-        else if (view === 'settings' && appState.settings && window.initSettings) {
-            window.initSettings(appState.settings);
         }
     }
 
@@ -169,24 +207,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });            
             
-            // 处理非JSON响应
-            let result;
-            try {
-                result = await response.json();
-            } catch (jsonError) {
-                throw new Error('服务器返回无效响应');
-            }
+            const result = await response.json();
             
             if (response.ok && result.success) {
-                showNotification(`缓存已刷新，${result.message || '共清理 ' + result.clearedCount + ' 个文件'}`, 'success');
+                showNotification(`缓存已刷新: ${result.message}`, 'success');
                 
-                // 延迟重新加载，让用户看到反馈
+                // 刷新缓存后立即重新加载图片（关键修复）
                 setTimeout(() => {
                     // 重新加载图片列表
                     if (window.loadGallery) {
-                        window.loadGallery(1); // 强制加载第一页
+                        window.refreshGallery();
                     }
-                }, 800);
+                }, 500);
             } else {
                 showNotification('刷新缓存失败: ' + (result.error || '未知错误'), 'error');
             }
@@ -232,16 +264,47 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     /**
-     * 初始化应用
+     * 初始化应用 - 修复版
+     * 确保设置加载完成后再初始化画廊，解决时序问题
      */
     function init() {
+        // 先设置事件监听
         setupEventListeners();
-        loadSettings();
         
-        // 初始化画廊
-        if (window.initGallery) {
-            window.initGallery();
-        }
+        // 加载设置并在完成后初始化画廊（关键修复）
+        loadSettings().then(() => {
+            console.log('设置加载完成，准备初始化画廊');
+            
+            // 确保gallery.js已加载且设置有效
+            if (typeof window.initGallery !== 'function') {
+                console.error('初始化失败：未找到initGallery函数，请检查gallery.js是否正确引入');
+                showNotification('画廊模块加载失败', 'error');
+                return;
+            }
+            
+            if (!appState.settings) {
+                console.error('初始化失败：设置数据为空');
+                showNotification('无法加载应用设置', 'error');
+                return;
+            }
+            
+            // 传递设置参数初始化画廊（关键修复）
+            window.initGallery(appState.settings);
+            
+            // 显式触发图片加载
+            if (window.refreshGallery) {
+                console.log('初始化完成，触发图片加载');
+                window.refreshGallery();
+            } else {
+                console.warn('未找到refreshGallery方法，尝试手动加载');
+                if (window.loadGallery) {
+                    window.loadGallery(1);
+                }
+            }
+        }).catch(error => {
+            console.error('初始化流程出错:', error);
+            showNotification('应用初始化失败: ' + error.message, 'error');
+        });
         
         // 暴露方法供其他模块使用
         window.app = {
@@ -252,6 +315,7 @@ document.addEventListener('DOMContentLoaded', function() {
             refreshCache
         };
     }
+
 
     // 启动应用
     init();
