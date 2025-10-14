@@ -233,36 +233,58 @@ function handleGetThumbnail() {
 /**
  * 处理获取原图的请求
  */
-function handleGetImage() {
-    if (!isset($_GET['path'])) {
-        http_response_code(400);
-        echo json_encode(['error' => '缺少图片路径参数']);
-        exit;
-    }
-    
-    $imagePath = $_GET['path'];
-    $settings = loadSettings();
-    
-    // 解析并验证图片路径
-    $fullImagePath = resolveImagePath($imagePath);
-    
-    // 检查文件是否存在且可读
-    if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
-        http_response_code(404);
+/**
+ * 处理获取图片列表的请求
+ */
+function handleGetImages() {
+    try {
+        // 验证并处理分页参数
+        $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $perPage = isset($_GET['perPage']) ? (int)$_GET['perPage'] : 20;
+        $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+        $sort = isset($_GET['sort']) ? $_GET['sort'] : 'name_asc';
+        
+        // 验证参数有效性
+        if ($page < 1) $page = 1;
+        if ($perPage < 1 || $perPage > 100) $perPage = 20; // 限制每页最大数量
+        
+        // 验证排序参数
+        $validSorts = ['name_asc', 'name_desc', 'date_asc', 'date_desc', 'size_asc', 'size_desc'];
+        if (!in_array($sort, $validSorts)) {
+            $sort = 'name_asc'; // 使用默认排序
+        }
+        
+        // 从缓存或扫描获取图片
+        $images = getImages($search, $sort);
+        
+        // 分页处理
+        $total = count($images);
+        $offset = ($page - 1) * $perPage;
+        $paginatedImages = array_slice($images, $offset, $perPage);
+        
+        // 返回正确的JSON响应
+        header('Content-Type: application/json; charset=utf-8');
         echo json_encode([
-            'error' => '图片不存在或无权访问',
-            'requestedPath' => $imagePath,
-            'resolvedPath' => $fullImagePath
+            'images' => $paginatedImages,
+            'pagination' => [
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalPages' => ceil($total / $perPage)
+            ]
+        ]);
+        exit;
+        
+    } catch (Exception $e) {
+        // 捕获所有异常，返回有意义的错误信息
+        header('Content-Type: application/json; charset=utf-8');
+        http_response_code(500);
+        echo json_encode([
+            'error' => '获取图片列表失败',
+            'details' => DEBUG ? $e->getMessage() : '内部服务器错误'
         ]);
         exit;
     }
-    
-    // 输出原图
-    $mimeType = mime_content_type($fullImagePath);
-    header("Content-Type: $mimeType");
-    header("Content-Length: " . filesize($fullImagePath));
-    readfile($fullImagePath);
-    exit;
 }
 
 /**
