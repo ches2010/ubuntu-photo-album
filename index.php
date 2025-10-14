@@ -577,8 +577,8 @@ function scanDirectory($dir, $baseDir, $extensions, $scanSubfolders = true, $max
                 $width = $dimensions ? $dimensions[0] : 0;
                 $height = $dimensions ? $dimensions[1] : 0;
                 
-                // 正确编码URL中的特殊字符
-                $encodedPath = urlencode($relativePath);
+                // 修复：使用rawurlencode确保路径正确编码
+                $encodedPath = rawurlencode($relativePath);
                 
                 $images[] = [
                     'name' => pathinfo($path, PATHINFO_FILENAME),
