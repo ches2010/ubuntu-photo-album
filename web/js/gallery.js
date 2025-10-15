@@ -191,7 +191,7 @@ function initGallery(settings) {
         const fragment = document.createDocumentFragment();
 
         // 6. 渲染图片列表
-        galleryState.images.forEach ((image, index) => {
+        galleryState.images.forEach((image, index) => {
             // 验证图片对象完整性
             if (!image || !image.path || !image.name) {
                 console.warn('跳过无效的图片数据:', image);
@@ -247,8 +247,8 @@ function initGallery(settings) {
             });
 
             // 8. 修复点击事件，传递正确索引
-            galleryItem.addEventListener ('click', () => {
-                openImageModal (galleryState.images, index);
+            galleryItem.addEventListener('click', () => {
+                openImageModal(galleryState.images, index);
             });
 
             fragment.appendChild(galleryItem);
@@ -302,80 +302,44 @@ function initGallery(settings) {
      * @param {Object} image - 图片信息对象
      */
     async function openImageModal(image) {
-
-        // 1. 验证参数有效性
-        if (!Array.isArray(images) || index < 0 || index >= images.length) {
-            console.error('无效的图片数据或索引', {
-                images, index 
-            });
-            return;
-        }
-
-        const image = images [index];
         galleryState.currentImage = image;
-        galleryState.currentImageIndex = index;
+        resetImageTransform();
 
-        // 记录当前索引用于导航
-        resetImageTransform(); // 重置图片旋转 / 翻转状态
-
-        // 2. 检查模态框元素是否存在
-        if (!elements.imageModal || !elements.modalImage) {
-            console.error (' 模态框元素缺失，请检查 HTML 中的 #imageModal 和 #modalImage');
-            window.app?.showNotification (' 预览功能异常：模态框元素缺失 ', 'error');
-            return;
-        }
-        
-        // 3. 显示模态框加载状态
+        // 显示加载状态
         showModalLoader();
-        elements.modalImage.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg=='; // 空白占位图
-        elements.imageModal.classList.add ('active'); // 先显示模态框（避免加载完成后闪烁）
-        document.body.style.overflow = 'hidden'; // 禁止页面滚动
+        elements.modalImage.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
         
         try {
-            // 4. 修复：正确编码原图路径（关键！避免特殊字符导致 404）
-            const normalizedPath = image.path.replace (/\\/g, '/').replace (/\/+/g, '/');
-            const encodedPath = encodeURIComponent (normalizedPath);
-            const imageUrl = index.php?action=getImage&path=${
-                encodedPath
-            };
-            // 5. 加载原图（使用 Image 对象预加载，确保加载完成后再显示）
-            const img = new Image ();
-            img.src = imageUrl;
-            // 6. 监听图片加载成功事件
-            img.onload = function () {  // 更新模态框内容
-                elements.modalImage.src = imageUrl;
-                elements.modalTitle.textContent = escapeHtml (image.name || ' 未命名图片 ');
-                elements.modalSize.textContent = 大小: ${
-                    image.sizeFormatted || '未知'
-                };
-                elements.modalDimensions.textContent = 尺寸: ${
-                    image.width || img.width
-                } × ${
-                    image.height || img.height
-                };
-                elements.modalModified.textContent = 修改: ${
-                    image.modifiedFormatted || '未知时间'
-                };
-                elements.downloadLink.href = imageUrl;  // 修复下载链接
-                elements.downloadLink.download = image.filename || ' 未命名图片.jpg';
-                hideModalLoader ();  // 隐藏加载状态
-            };
-
-            // 7. 监听图片加载失败事件
-            img.onerror = function () {
-                throw new Error (原图加载失败（路径：${
-                    imageUrl
-                });
-            };
-            
-            // 8. 更新导航按钮状态（上一张 / 下一张）
-            updateNavigationButtons (images, index);
-            } catch (error) {
-                console.error (' 打开图片预览失败:', error);
-                window.app?.showNotification (' 无法加载原图: ' + error.message, 'error');
-                elements.modalImage.src = 'web/images/error-placeholder.png';  // 显示错误占位图
-                hideModalLoader ();
+            // 修复Base64图片路径编码
+            let imagePath = image.path;
+            try {
+                imagePath = decodeURIComponent(imagePath);
+            } catch (e) {
+                console.error('解码图片路径失败:', e);
             }
+            
+            // 获取Base64编码的原图
+            const base64Image = await getBase64Image(imagePath);
+            
+            // 更新模态框内容
+            elements.modalImage.src = base64Image;
+            elements.modalTitle.textContent = escapeHtml(image.name);
+            elements.modalSize.textContent = `大小: ${image.sizeFormatted}`;
+            elements.modalDimensions.textContent = `尺寸: ${image.width} × ${image.height}`;
+            elements.modalModified.textContent = `修改: ${image.modifiedFormatted}`;
+            elements.downloadLink.href = base64Image;
+            elements.downloadLink.download = image.filename;
+            
+            // 更新导航按钮状态
+            updateNavigationButtons();
+        } catch (error) {
+            console.error('加载图片预览失败:', error);
+            if (window.app && window.app.showNotification) {
+                window.app.showNotification('无法加载图片: ' + error.message, 'error');
+            }
+            elements.modalImage.src = 'web/images/error-placeholder.png';
+        } finally {
+            hideModalLoader();
         }
 
         // 显示模态框
@@ -386,43 +350,33 @@ function initGallery(settings) {
     /**
      * 更新导航按钮状态
      */
-    function updateNavigationButtons (images, currentIndex) {
-        const hasOnlyOneImage = images.length <= 1; // 上一张按钮
+    function updateNavigationButtons() {
+        const currentIndex = getCurrentImageIndex();
+        const hasOnlyOneImage = galleryState.images.length <= 1;
         
-        if (elements.prevImageBtn) {
-            elements.prevImageBtn.disabled = hasOnlyOneImage;elements.prevImageBtn.classList.toggle ('disabled', hasOnlyOneImage); // 重新绑定点击事件（避免事件丢失）
-            elements.prevImageBtn.onclick = function () {        
-                // 添加/移除禁用样式        
-                if (hasOnlyOneImage) {
-                    const prevIndex = currentIndex > 0 ? currentIndex - 1 : images.length - 1;
-                    openImageModal (images, prevIndex);
-                }
-            };
+        // 禁用/启用导航按钮
+        elements.prevImageBtn.disabled = hasOnlyOneImage;
+        elements.nextImageBtn.disabled = hasOnlyOneImage;
+        
+        // 添加/移除禁用样式
+        if (hasOnlyOneImage) {
+            elements.prevImageBtn.classList.add('disabled');
+            elements.nextImageBtn.classList.add('disabled');
+        } else {
+            elements.prevImageBtn.classList.remove('disabled');
+            elements.nextImageBtn.classList.remove('disabled');
         }
-
-        // 下一张按钮
-        if (elements.nextImageBtn) {
-            elements.nextImageBtn.disabled = hasOnlyOneImage;
-            elements.nextImageBtn.classList.toggle ('disabled', hasOnlyOneImage);
-            // 重新绑定点击事件
-            elements.nextImageBtn.onclick = function () {
-                if (!hasOnlyOneImage) {
-                    const nextIndex = currentIndex < images.length - 1 ? currentIndex + 1 : 0;openImageModal (images, nextIndex);
-                }
-            };
-        }
-    }
+    }    
 
     /**
      * 显示模态框加载指示器
      */
-    function showModalLoader () {
+    function showModalLoader() {
         if (elements.modalLoader) {
             elements.modalLoader.style.display = 'flex';
         } else {
             // 如果没有专门的加载器，使用图片占位
-            elements.modalImage.classList.add ('loading');
-            elements.modalImage.style.opacity = '0.5';
+            elements.modalImage.classList.add('loading');
         }
     }
 
@@ -434,7 +388,6 @@ function initGallery(settings) {
             elements.modalLoader.style.display = 'none';
         } else {
             elements.modalImage.classList.remove('loading');
-            elements.modalImage.style.opacity = '1';
         }
     }
 
