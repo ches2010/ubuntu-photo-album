@@ -3,7 +3,7 @@
  * 负责图片展示、分页、搜索、排序和预览功能
  */
 function initGallery(settings) {
-    // 画廊状态
+    // 画廊状态 - 修改为非const，允许在函数间共享
     const galleryState = {
         currentPage: 1,
         totalPages: 1,
@@ -48,13 +48,33 @@ function initGallery(settings) {
     };
 
     /**
+     * 验证关键DOM元素是否存在
+     */
+    function validateElements() {
+        const requiredElements = [
+            { id: 'gallery', element: elements.gallery, name: '画廊容器' },
+            { id: 'imageModal', element: elements.imageModal, name: '图片模态框' },
+            { id: 'modalImage', element: elements.modalImage, name: '模态框图片元素' }
+        ];
+
+        requiredElements.forEach(item => {
+            if (!item.element || item.element.nodeType !== 1) {
+                console.error(`关键元素缺失: #${item.id} (${item.name})`);
+                window.app?.showNotification(`功能异常: 缺少${item.name}`, 'error');
+            }
+        });
+    }
+
+    /**
      * 更新画廊设置
      * @param {Object} newSettings - 新的设置对象
      */
     function updateSettings(newSettings) {
         if (newSettings && newSettings.imagesPerRow) {
             // 更新网格布局
-            elements.gallery.style.gridTemplateColumns = `repeat(${newSettings.imagesPerRow}, 1fr)`;
+            if (elements.gallery) {
+                elements.gallery.style.gridTemplateColumns = `repeat(${newSettings.imagesPerRow}, 1fr)`;
+            }
         }
         
         // 从设置中获取每页显示数量
@@ -246,10 +266,14 @@ function initGallery(settings) {
                 this.parentNode.appendChild(errorMsg);
             });
 
-            // 8. 修复点击事件，传递正确索引
-            galleryItem.addEventListener('click', () => {
-                openImageModal(galleryState.images, index);
-            });
+            // 8. 修复点击事件 - 使用闭包确保正确的图片引用
+            (function(currentImage) {
+                galleryItem.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    console.log('缩略图被点击，路径:', currentImage.path);
+                    openImageModal(currentImage);
+                });
+            })(image);
 
             fragment.appendChild(galleryItem);
         });
@@ -290,16 +314,24 @@ function initGallery(settings) {
      * 更新分页控件
      */
     function updatePagination() {
-        elements.pageInfo.textContent = `第 ${galleryState.currentPage} / ${galleryState.totalPages} 页`;
-        elements.prevPageBtn.disabled = galleryState.currentPage <= 1;
-        elements.nextPageBtn.disabled = galleryState.currentPage >= galleryState.totalPages;
-        elements.pageJumpInput.value = galleryState.currentPage;
-        elements.pageJumpInput.max = galleryState.totalPages;
+        if (elements.pageInfo.textContent !== undefined) {
+            elements.pageInfo.textContent = `第 ${galleryState.currentPage} / ${galleryState.totalPages} 页`;
+        }
+        if (elements.prevPageBtn) {
+            elements.prevPageBtn.disabled = galleryState.currentPage <= 1;
+        }
+        if (elements.nextPageBtn) {
+            elements.nextPageBtn.disabled = galleryState.currentPage >= galleryState.totalPages;
+        }
+        if (elements.pageJumpInput.value !== undefined) {
+            elements.pageJumpInput.value = galleryState.currentPage;
+            elements.pageJumpInput.max = galleryState.totalPages;
+        }
     }
 
     /**
      * 打开图片预览模态框
-     * @param {Object} image - 图片信息对象
+     * @param {Object} image - 图片信息对象（修复参数定义）
      */
     async function openImageModal(image) {
         // 验证图片对象有效性
@@ -319,7 +351,7 @@ function initGallery(settings) {
             return;
         }
 
-        // 显示加载状态
+        // 显示加载状态和模态框
         showModalLoader();
         elements.modalImage.src = 'web/images/loading.png';
         elements.imageModal.classList.add('active');
@@ -327,12 +359,7 @@ function initGallery(settings) {
         
         try {
             // 修复路径处理逻辑：使用正确的编码/解码流程
-            let imagePath = image.path;
-            // 移除重复解码（image.path已经是解码后的路径）
-            // 直接使用encodeURIComponent进行编码，与后端配合
-            const encodedPath = encodeURIComponent(imagePath);
-            
-            // 优化：优先使用直接图片URL而非Base64（解决大图片加载问题）
+            const encodedPath = encodeURIComponent(image.path);
             const imageUrl = `index.php?action=getImage&path=${encodedPath}`;
             
             // 使用Image对象预加载，确保图片可访问
@@ -364,10 +391,8 @@ function initGallery(settings) {
         }
     }
 
-    
-
     /**
-     * 更新导航按钮状态（修复版）
+     * 更新导航按钮状态
      */
     function updateNavigationButtons() {
         const currentIndex = getCurrentImageIndex();
@@ -378,7 +403,6 @@ function initGallery(settings) {
         
         // 确保按钮元素存在再操作
         if (elements.prevImageBtn) {
-            // 修复：第一页禁用上一张，最后一页禁用下一张
             elements.prevImageBtn.disabled = hasOnlyOneImage || isFirstImage;
             elements.prevImageBtn.classList.toggle('disabled', hasOnlyOneImage || isFirstImage);
         }
@@ -413,7 +437,7 @@ function initGallery(settings) {
     }
 
     /**
-     * 获取当前图片在列表中的索引（修复版）
+     * 获取当前图片在列表中的索引
      * @returns {number} 图片索引，-1表示未找到
      */
     function getCurrentImageIndex() {
@@ -421,14 +445,14 @@ function initGallery(settings) {
             return -1;
         }
         
-        // 修复：使用路径严格匹配，避免同名文件混淆
+        // 使用路径严格匹配，避免同名文件混淆
         return galleryState.images.findIndex(
             img => img.path === galleryState.currentImage.path
         );
     }
 
     /**
-     * 查看上一张图片（修复版）
+     * 查看上一张图片
      */
     function showPreviousImage() {
         const currentIndex = getCurrentImageIndex();
@@ -437,9 +461,8 @@ function initGallery(settings) {
         openImageModal(galleryState.images[currentIndex - 1]);
     }
 
-
     /**
-     * 查看下一张图片（修复版）
+     * 查看下一张图片
      */
     function showNextImage() {
         const currentIndex = getCurrentImageIndex();
@@ -449,7 +472,7 @@ function initGallery(settings) {
     }
 
     /**
-     * 获取图片的Base64编码（备选方案，用于解决直接URL加载失败的情况）
+     * 获取图片的Base64编码（备选方案）
      * @param {string} path - 图片路径
      * @returns {Promise<string>} Base64编码
      */
@@ -508,7 +531,6 @@ function initGallery(settings) {
 
     /**
      * 应用所有图片变换（旋转、翻转）
-     * 分离出来的变换应用逻辑
      */
     function applyTransformations() {
         const { rotation, flipX, flipY } = galleryState.transform;
@@ -517,7 +539,7 @@ function initGallery(settings) {
 
     /**
      * 处理图片变换动作
-     * @param {string} action - 动作类型 ('rotateLeft', 'rotateRight', 'flipHorizontal', 'flipVertical', 'fullscreen')
+     * @param {string} action - 动作类型
      */
     function handleImageAction(action) {
         if (!galleryState.currentImage) return;
@@ -726,7 +748,7 @@ function initGallery(settings) {
             closeBtn.addEventListener('click', closeImageModal);
         }
 
-        // 点击模态框背景关闭 - 添加存在性检查
+        // 点击模态框背景关闭
         if (elements.imageModal) {
             elements.imageModal.addEventListener('click', (e) => {
                 // 检查点击的是模态框背景而非内容
@@ -746,7 +768,7 @@ function initGallery(settings) {
             });
         }
 
-        // 上一张/下一张图片按钮 - 修复：添加存在性检查
+        // 上一张/下一张图片按钮
         if (elements.prevImageBtn) {
             elements.prevImageBtn.addEventListener('click', showPreviousImage);
         }
@@ -757,7 +779,7 @@ function initGallery(settings) {
         // 键盘事件
         document.addEventListener('keydown', handleKeyPress);
 
-        // 监听全屏状态变化 - 添加存在性检查
+        // 监听全屏状态变化
         document.addEventListener('fullscreenchange', () => {
             if (!document.fullscreenElement && elements.imageModal) {
                 elements.imageModal.classList.remove('fullscreen');
@@ -772,6 +794,9 @@ function initGallery(settings) {
         });
     }
 
+    // 验证关键元素
+    validateElements();
+    
     // 设置事件监听
     setupEventListeners();
 
@@ -782,4 +807,3 @@ function initGallery(settings) {
     // 初始加载图片
     loadImages();
 }
-    
