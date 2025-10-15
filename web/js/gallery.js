@@ -208,7 +208,7 @@ function initGallery(settings) {
                 thumbnailUrl = `index.php?action=getThumbnail&path=${encodedPath}`;
             } catch (e) {
                 console.error('图片路径编码失败:', e, image.path);
-                thumbnailUrl = 'web/images/erro.png';
+                thumbnailUrl = 'web/images/error.png';
             }
             
             // 构建图片元素
@@ -282,7 +282,7 @@ function initGallery(settings) {
             return `index.php?action=getThumbnail&path=${encodeURIComponent(normalizedPath)}`;
         } catch (e) {
             console.error('路径编码错误:', e);
-            return 'web/images/erro.png';
+            return 'web/images/error.png';
         }
     }
 
@@ -302,71 +302,92 @@ function initGallery(settings) {
      * @param {Object} image - 图片信息对象
      */
     async function openImageModal(image) {
+        // 验证图片对象有效性
+        if (!image || !image.path) {
+            console.error('无效的图片对象:', image);
+            window.app?.showNotification('无效的图片数据', 'error');
+            return;
+        }
+        
         galleryState.currentImage = image;
         resetImageTransform();
+
+        // 检查模态框元素是否存在
+        if (!elements.imageModal || !elements.modalImage) {
+            console.error('模态框元素缺失，请检查DOM结构');
+            window.app?.showNotification('图片预览功能不可用', 'error');
+            return;
+        }
 
         // 显示加载状态
         showModalLoader();
         elements.modalImage.src = 'web/images/loading.png';
+        elements.imageModal.classList.add('active');
+        document.body.style.overflow = 'hidden';
         
         try {
-            // 修复Base64图片路径编码
+            // 修复路径处理逻辑：使用正确的编码/解码流程
             let imagePath = image.path;
-            try {
-                imagePath = decodeURIComponent(imagePath);
-            } catch (e) {
-                console.error('解码图片路径失败:', e);
-            }
+            // 移除重复解码（image.path已经是解码后的路径）
+            // 直接使用encodeURIComponent进行编码，与后端配合
+            const encodedPath = encodeURIComponent(imagePath);
             
-            // 获取Base64编码的原图
-            const base64Image = await getBase64Image(imagePath);
+            // 优化：优先使用直接图片URL而非Base64（解决大图片加载问题）
+            const imageUrl = `index.php?action=getImage&path=${encodedPath}`;
+            
+            // 使用Image对象预加载，确保图片可访问
+            const img = new Image();
+            img.src = imageUrl;
+            
+            await new Promise((resolve, reject) => {
+                img.onload = resolve;
+                img.onerror = () => reject(new Error(`无法加载图片: ${imageUrl}`));
+            });
             
             // 更新模态框内容
-            elements.modalImage.src = base64Image;
-            elements.modalTitle.textContent = escapeHtml(image.name);
-            elements.modalSize.textContent = `大小: ${image.sizeFormatted}`;
-            elements.modalDimensions.textContent = `尺寸: ${image.width} × ${image.height}`;
-            elements.modalModified.textContent = `修改: ${image.modifiedFormatted}`;
-            elements.downloadLink.href = base64Image;
-            elements.downloadLink.download = image.filename;
+            elements.modalImage.src = imageUrl;
+            elements.modalTitle.textContent = escapeHtml(image.name || '未知图片');
+            elements.modalSize.textContent = `大小: ${image.sizeFormatted || '未知'}`;
+            elements.modalDimensions.textContent = `尺寸: ${image.width || img.width} × ${image.height || img.height}`;
+            elements.modalModified.textContent = `修改: ${image.modifiedFormatted || '未知时间'}`;
+            elements.downloadLink.href = imageUrl;
+            elements.downloadLink.download = image.filename || '未命名图片';
             
             // 更新导航按钮状态
             updateNavigationButtons();
         } catch (error) {
             console.error('加载图片预览失败:', error);
-            if (window.app && window.app.showNotification) {
-                window.app.showNotification('无法加载图片: ' + error.message, 'error');
-            }
-            elements.modalImage.src = 'web/images/erro.png';
+            window.app?.showNotification('无法加载图片: ' + error.message, 'error');
+            elements.modalImage.src = 'web/images/error.png';
         } finally {
             hideModalLoader();
         }
-
-        // 显示模态框
-        elements.imageModal.classList.add('active');
-        document.body.style.overflow = 'hidden';
     }
 
+    
+
     /**
-     * 更新导航按钮状态
+     * 更新导航按钮状态（修复版）
      */
     function updateNavigationButtons() {
         const currentIndex = getCurrentImageIndex();
-        const hasOnlyOneImage = galleryState.images.length <= 1;
+        const totalImages = galleryState.images.length;
+        const hasOnlyOneImage = totalImages <= 1;
+        const isFirstImage = currentIndex === 0;
+        const isLastImage = currentIndex === totalImages - 1;
         
-        // 禁用/启用导航按钮
-        elements.prevImageBtn.disabled = hasOnlyOneImage;
-        elements.nextImageBtn.disabled = hasOnlyOneImage;
-        
-        // 添加/移除禁用样式
-        if (hasOnlyOneImage) {
-            elements.prevImageBtn.classList.add('disabled');
-            elements.nextImageBtn.classList.add('disabled');
-        } else {
-            elements.prevImageBtn.classList.remove('disabled');
-            elements.nextImageBtn.classList.remove('disabled');
+        // 确保按钮元素存在再操作
+        if (elements.prevImageBtn) {
+            // 修复：第一页禁用上一张，最后一页禁用下一张
+            elements.prevImageBtn.disabled = hasOnlyOneImage || isFirstImage;
+            elements.prevImageBtn.classList.toggle('disabled', hasOnlyOneImage || isFirstImage);
         }
-    }    
+        
+        if (elements.nextImageBtn) {
+            elements.nextImageBtn.disabled = hasOnlyOneImage || isLastImage;
+            elements.nextImageBtn.classList.toggle('disabled', hasOnlyOneImage || isLastImage);
+        }
+    }  
 
     /**
      * 显示模态框加载指示器
@@ -392,49 +413,51 @@ function initGallery(settings) {
     }
 
     /**
-     * 获取当前图片在列表中的索引
-     * @returns {number} 图片索引
+     * 获取当前图片在列表中的索引（修复版）
+     * @returns {number} 图片索引，-1表示未找到
      */
     function getCurrentImageIndex() {
-        if (!galleryState.currentImage || !galleryState.images.length) return -1;
+        if (!galleryState.currentImage || !galleryState.images.length) {
+            return -1;
+        }
         
+        // 修复：使用路径严格匹配，避免同名文件混淆
         return galleryState.images.findIndex(
             img => img.path === galleryState.currentImage.path
         );
     }
 
     /**
-     * 查看上一张图片
+     * 查看上一张图片（修复版）
      */
     function showPreviousImage() {
         const currentIndex = getCurrentImageIndex();
-        if (currentIndex === -1) return;
+        if (currentIndex <= 0) return;
         
-        const prevIndex = currentIndex > 0 ? currentIndex - 1 : galleryState.images.length - 1;
-        openImageModal(galleryState.images[prevIndex]);
+        openImageModal(galleryState.images[currentIndex - 1]);
     }
 
+
     /**
-     * 查看下一张图片
+     * 查看下一张图片（修复版）
      */
     function showNextImage() {
         const currentIndex = getCurrentImageIndex();
-        if (currentIndex === -1) return;
+        if (currentIndex === -1 || currentIndex >= galleryState.images.length - 1) return;
         
-        const nextIndex = currentIndex < galleryState.images.length - 1 ? currentIndex + 1 : 0;
-        openImageModal(galleryState.images[nextIndex]);
+        openImageModal(galleryState.images[currentIndex + 1]);
     }
 
     /**
-     * 获取图片的Base64编码
+     * 获取图片的Base64编码（备选方案，用于解决直接URL加载失败的情况）
      * @param {string} path - 图片路径
-     * @returns {Promise<string>} 包含Base64编码的Promise对象
+     * @returns {Promise<string>} Base64编码
      */
     async function getBase64Image(path) {
         try {
-            // 调用服务器接口获取Base64编码
             const normalizedPath = path.replace(/\\/g, '/').replace(/\/+/g, '/');
-            const response = await fetch(`index.php?action=getBase64Image&path=${encodeURIComponent(normalizedPath)}`);
+            const encodedPath = encodeURIComponent(normalizedPath);
+            const response = await fetch(`index.php?action=getBase64Image&path=${encodedPath}`);
 
             if (!response.ok) {
                 throw new Error(`HTTP错误: ${response.status}`);
@@ -446,12 +469,11 @@ function initGallery(settings) {
                 throw new Error(result.error);
             }
 
-            // 返回完整的Base64图片格式
             return `data:${result.mimeType};base64,${result.base64}`;
         } catch (error) {
             console.error('获取Base64图片错误:', error);
-            // 失败时返回默认占位图
-            return 'web/images/erro.png';
+            // 失败时返回错误占位图
+            return 'web/images/error.png';
         }
     }
 
