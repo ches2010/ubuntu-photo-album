@@ -132,51 +132,52 @@ function init() {
 /**
  * 处理获取图片列表的请求
  */
-function handleGetImage() {
+function handleGetImages() {
     try {
-        if (!isset($_GET['path'])) {
-            http_response_code(400);
-            echo json_encode(['error' => '缺少图片路径参数']);
-            exit;
-        }
-
-        $imagePath = $_GET['path'];
-        $settings = loadSettings();
+        // 验证并处理分页参数
+        $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+        $perPage = isset($_GET['perPage']) ? (int)$_GET['perPage'] : 20;
+        $search = isset($_GET['search']) ? trim($_GET['search']) : '';
+        $sort = isset($_GET['sort']) ? $_GET['sort'] : 'name_asc';
         
-        // 添加详细的路径调试日志
-        error_log("[GET_IMAGE] 原始路径: {$imagePath}");
+        // 验证参数有效性
+        if ($page < 1) $page = 1;
+        if ($perPage < 1 || $perPage > 100) $perPage = 20;
         
-        // 解码路径
-        $decodedPath = urldecode($imagePath);
-        error_log("[GET_IMAGE] 解码后路径: {$decodedPath}");
-        
-        // 解析完整路径
-        $fullImagePath = resolveImagePath($decodedPath);
-        error_log("[GET_IMAGE] 解析后完整路径: " . ($fullImagePath ?: '无效路径'));
-        
-        // 检查文件是否存在
-        if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
-            http_response_code(404);
-            echo json_encode([
-                'error' => '图片不存在或无权访问',
-                'requestedPath' => $imagePath,
-                'decodedPath' => $decodedPath,
-                'resolvedPath' => $fullImagePath
-            ]);
-            exit;
+        // 验证排序参数
+        $validSorts = ['name_asc', 'name_desc', 'date_asc', 'date_desc', 'size_asc', 'size_desc'];
+        if (!in_array($sort, $validSorts)) {
+            $sort = 'name_asc';
         }
         
-        // 输出图片
-        $mimeType = mime_content_type($fullImagePath);
-        header("Content-Type: $mimeType");
-        header("Content-Length: " . filesize($fullImagePath));
-        readfile($fullImagePath);
+        // 从缓存或扫描获取图片
+        $images = getImages($search, $sort);
+        
+        // 分页处理
+        $total = count($images);
+        $offset = ($page - 1) * $perPage;
+        $paginatedImages = array_slice($images, $offset, $perPage);
+        
+        // 返回正确的JSON响应
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode([
+            'images' => $paginatedImages,
+            'pagination' => [
+                'total' => $total,
+                'page' => $page,
+                'perPage' => $perPage,
+                'totalPages' => ceil($total / $perPage)
+            ]
+        ]);
         exit;
+        
     } catch (Exception $e) {
+        // 捕获所有异常，返回详细错误信息
+        header('Content-Type: application/json; charset=utf-8');
         http_response_code(500);
         echo json_encode([
-            'error' => '获取图片失败',
-            'details' => $e->getMessage()
+            'error' => '获取图片列表失败',
+            'details' => DEBUG ? $e->getMessage() : '内部服务器错误'
         ]);
         exit;
     }
@@ -386,26 +387,38 @@ function resolveImagePath($userPath) {
         }
         
         foreach ($settings['imagePaths'] as $basePath) {
-            // 确保基础路径以/结尾
-            $basePath = rtrim($basePath, '/') . '/';
-            // 组合完整路径
-            $fullPath = realpath($basePath . $normalizedPath);
-            // 验证路径是否有效且在允许的目录内
-            if ($fullPath && file_exists($fullPath) && 
-                strpos($fullPath, realpath($basePath)) === 0) {
+            if (!is_absolute_path($basePath)) {
+                error_log("[WARNING] 配置路径 '$basePath' 不是绝对路径，已跳过");
+                continue;
+            }
+            
+            $basePath = rtrim($basePath, '/');
+            $fullPath = $basePath . '/' . $normalizedPath;
+            $fullPath = realpath($fullPath);
+            
+            if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
+                if (DEBUG) {
+                    error_log("[INFO] 成功解析路径: $fullPath");
+                }
                 return $fullPath;
             }
         }
-
-        // 尝试直接访问路径（用于调试）
-        $fullPath = realpath($normalizedPath);
-        if ($fullPath && file_exists($fullPath)) {
-            error_log("[WARNING] 图片路径不在配置的目录中，但存在: {$fullPath}");            
+      
+        // 尝试直接使用用户提供的绝对路径
+        if (is_absolute_path($normalizedPath)) {
+            $fullPath = realpath($normalizedPath);
+            if ($fullPath && file_exists($fullPath) && is_readable($fullPath)) {
+                if (DEBUG) {
+                    error_log("[INFO] 解析成功(绝对路径): '$fullPath'");
+                }
+                return $fullPath;
+            }
         }
-
+        
+        error_log("[ERROR] 解析失败: 找不到文件 '$normalizedPath'");
         return false;
     } catch (Exception $e) {
-        error_log("[PATH_RESOLVE_ERROR] " . $e->getMessage());
+        error_log("[ERROR] 路径解析错误: " . $e->getMessage());
         return false;
     }
 }
