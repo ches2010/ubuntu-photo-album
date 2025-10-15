@@ -184,50 +184,6 @@ function handleGetImages() {
 }
 
 /**
- * 处理获取原图的请求
- */
-function handleGetImage() {
-    try {
-        if (!isset($_GET['path'])) {
-            http_response_code(400);
-            echo json_encode(['error' => '缺少图片路径参数']);
-            exit;
-        }
-        
-        $imagePath = $_GET['path'];
-        $settings = loadSettings();
-        
-        // 解析并验证图片路径
-        $fullImagePath = resolveImagePath($imagePath);
-        
-        // 检查文件是否存在且可读
-        if (!$fullImagePath || !file_exists($fullImagePath) || !is_readable($fullImagePath)) {
-            http_response_code(404);
-            echo json_encode([
-                'error' => '图片不存在或无权访问',
-                'requestedPath' => $imagePath,
-                'resolvedPath' => $fullImagePath
-            ]);
-            exit;
-        }
-        
-        // 输出原图
-        $mimeType = mime_content_type($fullImagePath);
-        header("Content-Type: $mimeType");
-        header("Content-Length: " . filesize($fullImagePath));
-        readfile($fullImagePath);
-        exit;
-    } catch (Exception $e) {
-        http_response_code(500);
-        echo json_encode([
-            'error' => '获取图片失败',
-            'details' => DEBUG ? $e->getMessage() : ''
-        ]);
-        exit;
-    }
-}
-
-/**
  * 处理获取缩略图的请求
  */
 function handleGetThumbnail() {
