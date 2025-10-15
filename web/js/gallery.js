@@ -208,7 +208,7 @@ function initGallery(settings) {
                 thumbnailUrl = `index.php?action=getThumbnail&path=${encodedPath}`;
             } catch (e) {
                 console.error('图片路径编码失败:', e, image.path);
-                thumbnailUrl = 'web/images/error-placeholder.png';
+                thumbnailUrl = 'web/images/erro.png';
             }
             
             // 构建图片元素
@@ -282,7 +282,7 @@ function initGallery(settings) {
             return `index.php?action=getThumbnail&path=${encodeURIComponent(normalizedPath)}`;
         } catch (e) {
             console.error('路径编码错误:', e);
-            return 'web/images/error-placeholder.png';
+            return 'web/images/erro.png';
         }
     }
 
@@ -307,7 +307,7 @@ function initGallery(settings) {
 
         // 显示加载状态
         showModalLoader();
-        elements.modalImage.src = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+P+/HgAFeAJ5gMm5gAAAABJRU5ErkJggg==';
+        elements.modalImage.src = 'web/images/loading.png';
         
         try {
             // 修复Base64图片路径编码
@@ -337,7 +337,7 @@ function initGallery(settings) {
             if (window.app && window.app.showNotification) {
                 window.app.showNotification('无法加载图片: ' + error.message, 'error');
             }
-            elements.modalImage.src = 'web/images/error-placeholder.png';
+            elements.modalImage.src = 'web/images/erro.png';
         } finally {
             hideModalLoader();
         }
@@ -451,7 +451,7 @@ function initGallery(settings) {
         } catch (error) {
             console.error('获取Base64图片错误:', error);
             // 失败时返回默认占位图
-            return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+            return 'web/images/erro.png';
         }
     }
 
