@@ -330,8 +330,8 @@ function initGallery(settings) {
     }
 
     /**
-     * 打开图片预览模态框
-     * @param {Object} image - 图片信息对象（修复参数定义）
+     * 打开图片预览模态框（修复路径编码版）
+     * @param {Object} image - 图片信息对象
      */
     async function openImageModal(image) {
         // 验证图片对象有效性
@@ -358,17 +358,34 @@ function initGallery(settings) {
         document.body.style.overflow = 'hidden';
         
         try {
-            // 修复路径处理逻辑：使用正确的编码/解码流程
-            const encodedPath = encodeURIComponent(image.path);
+            // 修复路径处理：标准化路径并正确编码
+            let normalizedPath = image.path
+                .replace(/\\/g, '/')       // 统一路径分隔符为/
+                .replace(/\/+/g, '/');     // 合并连续斜杠
+            
+            // 特别处理Windows路径（如果有）
+            if (normalizedPath.includes(':')) {
+                normalizedPath = normalizedPath.split(':').slice(1).join(':');
+            }
+            
+            // 编码路径（确保与服务器urldecode匹配）
+            const encodedPath = encodeURIComponent(normalizedPath);
             const imageUrl = `index.php?action=getImage&path=${encodedPath}`;
             
-            // 使用Image对象预加载，确保图片可访问
+            console.log('尝试加载原图:', imageUrl);
+            console.log('原始路径:', image.path);
+            console.log('标准化路径:', normalizedPath);
+            
+            // 使用Image对象预加载
             const img = new Image();
             img.src = imageUrl;
             
             await new Promise((resolve, reject) => {
                 img.onload = resolve;
-                img.onerror = () => reject(new Error(`无法加载图片: ${imageUrl}`));
+                img.onerror = () => {
+                    // 提供更详细的错误信息
+                    reject(new Error(`无法加载图片: ${imageUrl}\n可能原因: 路径错误或文件不存在`));
+                };
             });
             
             // 更新模态框内容
@@ -380,12 +397,11 @@ function initGallery(settings) {
             elements.downloadLink.href = imageUrl;
             elements.downloadLink.download = image.filename || '未命名图片';
             
-            // 更新导航按钮状态
             updateNavigationButtons();
         } catch (error) {
             console.error('加载图片预览失败:', error);
             window.app?.showNotification('无法加载图片: ' + error.message, 'error');
-            elements.modalImage.src = 'web/images/error.png';
+            elements.modalImage.src = 'web/images/error-placeholder.png';
         } finally {
             hideModalLoader();
         }
