@@ -231,7 +231,7 @@ class GalleryModal {
         } catch (err) {
             console.error(`全屏错误: ${err.message}`);
             if (window.app && window.app.showNotification) {
-                window.app.showNotification('无法切换全屏模式': + err.message, 'error');
+                window.app.showNotification("无法切换全屏模式": + err.message, 'error');
             }
         }
     }
