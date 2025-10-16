@@ -88,6 +88,7 @@ V2.0.0
 - **端口设置**：应用运行端口
 
 ## 目录结构
+```bash
 ubuntu-photo-album/
 ├── index.php           # 主程序入口
 ├── index.html          # 前端页面
@@ -97,11 +98,31 @@ ubuntu-photo-album/
 │   ├── css/            # 样式表
 │   │   ├── bootstrap.min.css
 │   │   └── styles.css
-│   └── js/             # JavaScript文件
-│       ├── app.js
-│       ├── bootstrap.bundle.min.js
-│       ├── gallery.js
-│       └── settings.js
+│   ├── js/             # JavaScript文件
+│   │   ├── app.js
+│   │   ├── bootstrap.bundle.min.js
+│   │   ├── galleryCore.js
+│   │   ├── galleryElements.js
+│   │   ├── galleryRenderer.js
+│   │   ├── galleryLoader.js
+│   │   ├── galleryModal.js
+│   │   ├── galleryEvents.js
+│   │   ├── galleryMain.js
+│   │   └── settings.js
+│   └── images/         # 图标及空白图
+│       ├── error.png
+│       ├── favicon.ico
+│       └── loading.png
+└── includes/           # 后端文件
+    ├── base64_hander.php
+    ├── cache_hander.php
+    ├── config.php
+    ├── core.php
+    ├── image_handler.php
+    ├── thumbnail_handler.php
+    └── utils.php
+```
+    
 ## 常见问题
 
 ### API返回404错误
