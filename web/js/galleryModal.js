@@ -7,8 +7,42 @@ class GalleryModal {
         this.showPreviousImage = this.showPreviousImage.bind(this);
         this.showNextImage = this.showNextImage.bind(this);
         
+        // 验证必要元素是否存在
+        this.validateRequiredElements();
+        
         // 初始化时绑定按钮事件
         this.bindNavigationEvents();
+    }
+
+    // 验证必要的DOM元素是否存在
+    validateRequiredElements() {
+        const requiredElements = [
+            'imageModal', 
+            'modalImage', 
+            'prevImageBtn', 
+            'nextImageBtn',
+            'modalTitle',
+            'modalSize',
+            'modalDimensions',
+            'modalModified',
+            'downloadLink'
+        ];
+        
+        const missingElements = [];
+        
+        requiredElements.forEach(elementId => {
+            if (!this.elements.get(elementId)) {
+                missingElements.push(elementId);
+            }
+        });
+        
+        if (missingElements.length > 0) {
+            console.error('缺失必要的模态框元素:', missingElements);
+            window.app?.showNotification(
+                `图片预览功能异常: 缺少必要组件`, 
+                'error'
+            );
+        }
     }
 
     // 绑定导航按钮事件
@@ -16,15 +50,19 @@ class GalleryModal {
         const prevBtn = this.elements.get('prevImageBtn');
         const nextBtn = this.elements.get('nextImageBtn');
         
+        // 检查按钮是否存在再绑定事件
         if (prevBtn) {
-            // 先移除可能存在的事件监听器，避免重复绑定
             prevBtn.removeEventListener('click', this.showPreviousImage);
             prevBtn.addEventListener('click', this.showPreviousImage);
+        } else {
+            console.warn('上一张按钮元素(prevImageBtn)未找到，无法绑定事件');
         }
         
         if (nextBtn) {
             nextBtn.removeEventListener('click', this.showNextImage);
             nextBtn.addEventListener('click', this.showNextImage);
+        } else {
+            console.warn('下一张按钮元素(nextImageBtn)未找到，无法绑定事件');
         }
     }
 
@@ -35,14 +73,20 @@ class GalleryModal {
             return;
         }
         
+        // 检查模态框主元素是否存在
+        const imageModal = this.elements.get('imageModal');
+        if (!imageModal) {
+            console.error('模态框主元素(imageModal)不存在');
+            return;
+        }
+        
         this.core.setState({ currentImage: image });
         this.resetImageTransform();
 
-        const imageModal = this.elements.get('imageModal');
         const modalImage = this.elements.get('modalImage');
         
-        if (!imageModal || !modalImage) {
-            console.error('模态框元素缺失，请检查DOM结构');
+        if (!modalImage) {
+            console.error('模态框图片元素(modalImage)缺失');
             window.app?.showNotification('图片预览功能不可用', 'error');
             return;
         }
@@ -79,12 +123,25 @@ class GalleryModal {
             });
             
             modalImage.src = imageUrl;
-            this.elements.get('modalTitle').textContent = this.escapeHtml(image.name || '未知图片');
-            this.elements.get('modalSize').textContent = `大小: ${image.sizeFormatted || '未知'}`;
-            this.elements.get('modalDimensions').textContent = `尺寸: ${image.width || img.width} × ${image.height || img.height}`;
-            this.elements.get('modalModified').textContent = `修改: ${image.modifiedFormatted || '未知时间'}`;
-            this.elements.get('downloadLink').href = imageUrl;
-            this.elements.get('downloadLink').download = image.filename || '未命名图片';
+            
+            // 安全更新模态框信息，检查元素是否存在
+            const modalTitle = this.elements.get('modalTitle');
+            if (modalTitle) modalTitle.textContent = this.escapeHtml(image.name || '未知图片');
+            
+            const modalSize = this.elements.get('modalSize');
+            if (modalSize) modalSize.textContent = `大小: ${image.sizeFormatted || '未知'}`;
+            
+            const modalDimensions = this.elements.get('modalDimensions');
+            if (modalDimensions) modalDimensions.textContent = `尺寸: ${image.width || img.width} × ${image.height || img.height}`;
+            
+            const modalModified = this.elements.get('modalModified');
+            if (modalModified) modalModified.textContent = `修改: ${image.modifiedFormatted || '未知时间'}`;
+            
+            const downloadLink = this.elements.get('downloadLink');
+            if (downloadLink) {
+                downloadLink.href = imageUrl;
+                downloadLink.download = image.filename || '未命名图片';
+            }
             
             this.updateNavigationButtons();
         } catch (error) {
@@ -104,28 +161,32 @@ class GalleryModal {
         }
         
         const imageModal = this.elements.get('imageModal');
-        imageModal.classList.remove('active');
+        if (imageModal) {
+            imageModal.classList.remove('active');
+        }
         document.body.style.overflow = '';
         this.core.setState({ currentImage: null });
         this.resetImageTransform();
     }
 
     updateNavigationButtons() {
-        const currentIndex = this.getCurrentImageIndex();
-        const { images } = this.core.getState();
-        const totalImages = images ? images.length : 0; // 确保不会因为images为undefined而报错
-        const hasOnlyOneImage = totalImages <= 1;
-        const isFirstImage = currentIndex === 0;
-        const isLastImage = currentIndex === totalImages - 1;
-        
         const prevImageBtn = this.elements.get('prevImageBtn');
         const nextImageBtn = this.elements.get('nextImageBtn');
         
-        // 确保按钮元素存在
+        // 检查按钮元素是否存在
         if (!prevImageBtn || !nextImageBtn) {
-            console.error('导航按钮元素缺失');
+            console.error('导航按钮元素缺失: ' + 
+                (prevImageBtn ? '' : 'prevImageBtn ') + 
+                (nextImageBtn ? '' : 'nextImageBtn'));
             return;
         }
+        
+        const currentIndex = this.getCurrentImageIndex();
+        const { images } = this.core.getState();
+        const totalImages = images ? images.length : 0;
+        const hasOnlyOneImage = totalImages <= 1;
+        const isFirstImage = currentIndex === 0;
+        const isLastImage = currentIndex === totalImages - 1;
         
         // 更新按钮状态
         const canGoPrev = totalImages > 1 && currentIndex > 0;
@@ -154,8 +215,13 @@ class GalleryModal {
     }
 
     showPreviousImage() {
+        // 先检查按钮是否存在
+        if (!this.elements.get('prevImageBtn')) {
+            console.error('上一张按钮元素不存在，无法执行导航');
+            return;
+        }
+        
         const { images } = this.core.getState();
-        // 验证图片数据是否有效
         if (!images || images.length <= 1) {
             console.log('没有足够的图片用于导航');
             return;
@@ -167,14 +233,18 @@ class GalleryModal {
             return;
         }
         
-        // 输出调试信息
         console.log(`导航到上一张图片，当前索引: ${currentIndex}, 目标索引: ${currentIndex - 1}`);
         this.openImageModal(images[currentIndex - 1]);
     }
 
     showNextImage() {
+        // 先检查按钮是否存在
+        if (!this.elements.get('nextImageBtn')) {
+            console.error('下一张按钮元素不存在，无法执行导航');
+            return;
+        }
+        
         const { images } = this.core.getState();
-        // 验证图片数据是否有效
         if (!images || images.length <= 1) {
             console.log('没有足够的图片用于导航');
             return;
@@ -186,7 +256,6 @@ class GalleryModal {
             return;
         }
         
-        // 输出调试信息
         console.log(`导航到下一张图片，当前索引: ${currentIndex}, 目标索引: ${currentIndex + 1}`);
         this.openImageModal(images[currentIndex + 1]);
     }
@@ -198,7 +267,7 @@ class GalleryModal {
             modalLoader.style.display = 'flex';
         } else {
             const modalImage = this.elements.get('modalImage');
-            modalImage.classList.add('loading');
+            if (modalImage) modalImage.classList.add('loading');
         }
     }
 
@@ -208,7 +277,7 @@ class GalleryModal {
             modalLoader.style.display = 'none';
         } else {
             const modalImage = this.elements.get('modalImage');
-            modalImage.classList.remove('loading');
+            if (modalImage) modalImage.classList.remove('loading');
         }
     }
 
@@ -227,12 +296,13 @@ class GalleryModal {
         const { transform } = this.core.getState();
         const { rotation, flipX, flipY } = transform;
         const modalImage = this.elements.get('modalImage');
-        modalImage.style.transform = `rotate(${rotation}deg) scaleX(${flipX}) scaleY(${flipY})`;
+        if (modalImage) {
+            modalImage.style.transform = `rotate(${rotation}deg) scaleX(${flipX}) scaleY(${flipY})`;
+        }
     }
 
     handleImageAction(action) {
         const { currentImage } = this.core.getState();
-
         if (!currentImage) return;
 
         const { transform } = this.core.getState();
@@ -264,6 +334,11 @@ class GalleryModal {
 
     toggleFullscreen() {
         const imageModal = this.elements.get('imageModal');
+        if (!imageModal) {
+            console.error('模态框元素不存在，无法切换全屏');
+            return;
+        }
+        
         try {
             if (!document.fullscreenElement) {
                 if (imageModal.requestFullscreen) {
@@ -294,7 +369,7 @@ class GalleryModal {
 
     handleKeyPress(e) {
         const imageModal = this.elements.get('imageModal');
-        if (!imageModal.classList.contains('active')) return;
+        if (!imageModal || !imageModal.classList.contains('active')) return;
 
         switch (e.key) {
             case 'Escape':
