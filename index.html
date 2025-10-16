@@ -1,156 +1,126 @@
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <link rel="icon" href="web/images/favicon.ico" type="image/x-icon">
-    <title>Ubuntu服务器相册</title>
-    <link rel="stylesheet" href="web/css/styles.css">
-    <link rel="stylesheet" href="web/css/bootstrap.min.css">
-</head>
-<body>
-    <header class="app-header">
-        <div class="container">
-            <h1>📸Ubuntu服务器相册</h1>
-            <div class="controls">
-                <button id="galleryBtn" class="btn active">🖼️画廊</button>
-                <button id="settingsBtn" class="btn">⚙️设置</button>
-                <button id="refreshBtn" class="btn">🔄️刷新缓存</button>
-            </div>
-        </div>
-    </header>
+<?php
+/**
+ * Ubuntu服务器相册 - 入口文件
+ * index.php
+ * 处理请求路由
+ */
 
-    <main class="container">
-        <!-- 画廊视图 -->
-        <section id="galleryView" class="view active">
-            <div class="filters">
-                <div class="search-box">
-                    <input type="text" id="searchInput" placeholder="搜索图片...">
-                    <button id="searchBtn" class="btn">搜索</button>
-                </div>
-                <div class="sort-options">
-                    <select id="sortSelect" class="form-control">
-                        <option value="name_asc">按名称升序</option>
-                        <option value="name_desc">按名称降序</option>
-                        <option value="date_asc">按日期升序</option>
-                        <option value="date_desc">按日期降序</option>
-                        <option value="size_asc">按大小升序</option>
-                        <option value="size_desc">按大小降序</option>
-                    </select>
-                </div>
-            </div>
+// 加载核心函数库
+require_once 'includes/core.php';
+require_once 'includes/config.php';
+require_once 'includes/image_handler.php';
+require_once 'includes/thumbnail_handler.php';
+require_once 'includes/base64_handler.php';
+require_once 'includes/cache_handler.php';
+require_once 'includes/utils.php';
 
-            <div id="gallery" class="gallery-grid"></div>
+// 调试模式控制 - 开启调试以查看详细错误
+define('DEBUG', true);
 
-            <div class="pagination" id="pagination">
-                <button id="prevPage" class="btn" disabled>上一页</button>
-                <span id="pageInfo">第 1 页</span>
-                <button id="nextPage" class="btn">下一页</button>
-                <div class="page-jump">
-                    <input type="number" id="pageJumpInput" min="1" value="1" class="form-control">
-                    <button id="jumpToPageBtn" class="btn">跳转</button>
-                </div>
-            </div>
-        </section>
+// 设置PHP错误报告级别
+if (DEBUG) {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 1);
+} else {
+    error_reporting(E_ERROR | E_WARNING);
+    ini_set('display_errors', 0);
+}
 
-        <!-- 设置视图 -->
-        <section id="settingsView" class="view">
-            <form id="settingsForm" class="settings-form">
-                <div class="form-group">
-                    <label for="imagePath">图片文件夹路径</label>
-                    <div class="path-input-group">
-                        <input type="text" id="imagePath" class="form-control" required>
-                        <button type="button" id="addPathBtn" class="btn">添加</button>
-                    </div>
-                    <div id="pathList" class="path-list"></div>
-                </div>
+// 设置错误日志文件
+ini_set('log_errors', 1);
+ini_set('error_log', '/var/log/php/photo-album.log');
 
-                <div class="form-group">
-                    <label for="scanSubfolders">
-                        <input type="checkbox" id="scanSubfolders"> 扫描子文件夹
-                    </label>
-                </div>
+// 确保必要目录存在
+$cacheDir = 'cache/';
+if (!is_dir($cacheDir)) {
+    mkdir($cacheDir, 0755, true);
+}
 
-                <div class="form-group">
-                    <label for="maxDepth">最大扫描深度 (0为无限制)</label>
-                    <input type="number" id="maxDepth" min="0" value="0" class="form-control">
-                </div>
+// 先判断是否是默认首页请求（无任何参数）
+$isDefaultRequest = empty($_GET) && 
+                   ($_SERVER['REQUEST_URI'] === '/' || 
+                    $_SERVER['REQUEST_URI'] === '/index.php');
 
-                <div class="form-group">
-                    <label for="imagesPerRow">每行显示图片数量</label>
-                    <input type="range" id="imagesPerRow" min="1" max="10" value="4" class="form-range">
-                    <span id="imagesPerRowValue">4</span>
-                </div>
+// 根据请求类型设置正确的Content-Type
+if ($isDefaultRequest) {
+    header('Content-Type: text/html; charset=utf-8');
+} else {
+    // 缩略图和原图请求需要特殊的Content-Type
+    $action = $_GET['action'] ?? '';
+    if ($action !== 'getThumbnail' && $action !== 'getImage') {
+        header('Content-Type: application/json; charset=utf-8');
+    }
+}
 
-                <div class="form-group">
-                    <label for="cacheTTL">缓存有效期 (秒)</label>
-                    <input type="number" id="cacheTTL" min="0" value="3600" class="form-control">
-                </div>
+// 处理跨域请求
+header('Access-Control-Allow-Origin: *');
+header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
+header('Access-Control-Allow-Headers: Content-Type');
 
-                <div class="form-group">
-                    <label for="port">应用运行端口</label>
-                    <input type="number" id="port" min="1" max="65535" value="8080" class="form-control">
-                </div>
+// 处理OPTIONS请求
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit;
+}
 
-                <div class="form-actions">
-                    <button type="submit" class="btn primary">保存设置</button>
-                    <button type="button" id="resetSettingsBtn" class="btn">重置</button>
-                </div>
-            </form>
-        </section>
-    </main>
+// 获取请求操作，默认为显示首页
+$action = $_GET['action'] ?? ($isDefaultRequest ? 'default' : 'invalid');
 
-    <!-- 图片预览模态框 -->
-    <div id="imageModal" class="modal">
-        <div class="modal-content">
-            <span class="close-btn">&times;</span>
-            
-            <!-- 上一张/下一张导航按钮 -->
-            <div class="modal-navigation">
-                <button id="prevImageBtn" class="modal-nav-btn prev" title="上一张 (←)">←</button>
-                <button id="nextImageBtn" class="modal-nav-btn next" title="下一张 (→)">→</button>
-            </div>
-            <div class="modal-image-container">
-                <button class="modal-btn rotate-left" data-action="rotateLeft" title="向左旋转 (↑)">↺</button>
-                <img id="modalImage" src="" alt="图片预览">
-                <button class="modal-btn rotate-right" data-action="rotateRight" title="向右旋转 (↓)">↻</button>
-            </div>
-            
-            <div class="modal-controls">
-                <button class="modal-btn flip-horizontal" data-action="flipHorizontal" title="水平翻转 (H)">⟷</button>
-                <button class="modal-btn flip-vertical" data-action="flipVertical" title="垂直翻转 (V)">⟲</button>
-                <a id="downloadLink" class="modal-btn download" download title="下载图片">↓ 下载</a>
-                <button class="modal-btn fullscreen" data-action="fullscreen" title="全屏查看 (F)">⛶</button>
-            </div>
-            
-            <div class="image-info">
-                <h3 id="imageTitle"></h3>
-                <p>
-                    <span id="imageSize"></span> | 
-                    <span id="imageDimensions"></span> | 
-                    <span id="imageModified"></span>
-                </p>
-            </div>
-            
-            <!-- 加载指示器 -->
-            <div id="modalLoader" class="modal-loader">
-                <div class="spinner"></div>
-        </div>
-    </div>
+// 初始化
+init();
 
-    <!-- 通知提示 -->
-    <div id="notification" class="notification"></div>
+/**
+ * 初始化函数，路由请求到相应的处理函数
+ */
+function init() {
+    global $configFile, $defaultConfig, $action;
+    
+    // 确保配置文件存在
+    if (!file_exists($configFile)) {
+        saveConfig($defaultConfig);
+    }
+    
+    // 路由到相应的处理函数
+    switch ($action) {
+        case 'getThumbnail':
+            handleGetThumbnail();
+            break;
+        case 'getImage':
+            handleGetImage();
+            break;
+        case 'getBase64Image':
+            handleGetBase64Image();
+            break;
+        case 'getImages':
+            handleGetImages();
+            break;
+        case 'getSettings':
+            handleGetSettings();
+            break;
+        case 'saveSettings':
+            handleSaveSettings();
+            break;
+        case 'refreshCache':
+            handleRefreshCache();
+            break;
+        case 'default':
+            // 处理默认请求，返回前端页面
+            if (file_exists('index.html')) {
+                // 确保内容类型正确
+                header('Content-Type: text/html; charset=utf-8');
+                readfile('index.html');
+            } else {
+                http_response_code(404);
+                echo json_encode(['error' => '首页文件不存在']);
+            }
+            break;
+        default:
+            http_response_code(400);
+            echo json_encode(['error' => '无效的请求动作: ' . $action]);
+            break;
+    }
+}
+?>
 
-    <!-- 加载指示器 -->
-    <div id="loader" class="loader">
-        <div class="spinner"></div>
-        <p>加载中...</p>
-    </div>
 
-    <!-- JavaScript文件 -->
-    <script src="web/js/bootstrap.bundle.min.js"></script>
-    <script src="web/js/gallery.js"></script>
-    <script src="web/js/settings.js"></script>
-    <script src="web/js/app.js"></script>
-</body>
-</html>
+
