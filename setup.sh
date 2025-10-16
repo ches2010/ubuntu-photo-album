@@ -19,7 +19,7 @@ echo "项目目录: $PROJECT_DIR"
 # 安装必要的依赖 - 使用系统支持的PHP版本
 echo "1/5: 安装必要的依赖..."
 apt update -y
-apt install -y php php-fpm nginx python3 python3-pip python3-venv
+apt install -y php php7.4-fpm nginx python3 python3-pip python3-venv
 
 # 安装Python依赖（如需要）
 python3 -m venv venv
@@ -121,8 +121,8 @@ if [ -n "$PHP_FPM_SERVICE" ]; then
     systemctl enable "$PHP_FPM_SERVICE"
 else
     echo "警告: 未找到PHP-FPM服务，尝试通用启动命令..."
-    systemctl restart php-fpm
-    systemctl enable php-fpm
+    systemctl restart php7.4-fpm
+    systemctl enable php7.4-fpm
 fi
 
 # 启动Flask应用（如需要）
