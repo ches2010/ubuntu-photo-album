@@ -129,10 +129,18 @@ class GalleryModal {
     }
 
     showNextImage() {
+        // 修复：从core状态中获取images，而不是直接引用未定义的变量
+        const { images } = this.core.getState();
         const currentIndex = this.getCurrentImageIndex();
+        
+        // 添加安全检查：确保images存在且有内容
+        if (!images || images.length === 0) {
+            console.warn('没有图片数据可供浏览');
+            return;
+        }
+        
         if (currentIndex === -1 || currentIndex >= images.length - 1) return;
         
-        const { images } = this.core.getState();
         this.openImageModal(images[currentIndex + 1]);
     }
 
