@@ -1,5 +1,6 @@
 <?php
-/**
+// includes/delete_handler.php
+/*
  * 图片删除处理器
  * 负责处理图片删除请求并返回结果
  */
