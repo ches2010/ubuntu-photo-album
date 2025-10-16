@@ -6,6 +6,7 @@ function initGallery(settings) {
     const loader = new GalleryLoader(core, elements, renderer);
     const modal = new GalleryModal(core, elements);
     const events = new GalleryEvents(core, elements, loader, modal);
+    const deleter = new GalleryDeleter(core, elements);
 
     elements.validateRequiredElements();
     
@@ -14,6 +15,10 @@ function initGallery(settings) {
     window.refreshGallery = () => loader.loadImages();
     window.openImageModal = (image) => modal.openImageModal(image);
 
+    window.galleryCore = core;
+    window.galleryModal = modal;
+    window.galleryDeleter = deleter;
+    
     // 初始加载图片
     loader.loadImages();
 }
