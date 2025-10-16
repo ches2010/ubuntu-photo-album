@@ -26,7 +26,7 @@
             <div class="filters">
                 <div class="search-box">
                     <input type="text" id="searchInput" placeholder="搜索图片...">
-                    <button id="searchBtn" class="btn">搜索</button>
+                    <button id="searchBtn" class="btn">🔍搜索</button>
                 </div>
                 <div class="sort-options">
                     <select id="sortSelect" class="form-control">
@@ -119,7 +119,11 @@
             <div class="modal-controls">
                 <button class="modal-btn flip-horizontal" data-action="flipHorizontal" title="水平翻转 (H)">⟷</button>
                 <button class="modal-btn flip-vertical" data-action="flipVertical" title="垂直翻转 (V)">⟲</button>
-                <a id="downloadLink" class="modal-btn download" download title="下载图片">↓ 下载</a>
+                <button class="modal-btn zoom-in" data-action="zoomIn" title="放大 (+)">+</button>
+                <button class="modal-btn zoom-out" data-action="zoomOut" title="缩小 (-)">-</button>
+                <button class="modal-btn reset-zoom" data-action="resetZoom" title="重置缩放 (0)">⟲</button>
+                <a id="downloadLink" class="modal-btn download" download title="下载图片">⬇️ 下载</a>
+                <button class="modal-btn delete" data-action="delete" title="删除图片 (Delete)">🗑️ 删除</button>
                 <button class="modal-btn fullscreen" data-action="fullscreen" title="全屏查看 (F)">⛶</button>
             </div>
             
