@@ -3,6 +3,29 @@ class GalleryModal {
     constructor(core, elements) {
         this.core = core;
         this.elements = elements;
+        // 绑定事件处理函数的上下文
+        this.showPreviousImage = this.showPreviousImage.bind(this);
+        this.showNextImage = this.showNextImage.bind(this);
+        
+        // 初始化时绑定按钮事件
+        this.bindNavigationEvents();
+    }
+
+    // 绑定导航按钮事件
+    bindNavigationEvents() {
+        const prevBtn = this.elements.get('prevImageBtn');
+        const nextBtn = this.elements.get('nextImageBtn');
+        
+        if (prevBtn) {
+            // 先移除可能存在的事件监听器，避免重复绑定
+            prevBtn.removeEventListener('click', this.showPreviousImage);
+            prevBtn.addEventListener('click', this.showPreviousImage);
+        }
+        
+        if (nextBtn) {
+            nextBtn.removeEventListener('click', this.showNextImage);
+            nextBtn.addEventListener('click', this.showNextImage);
+        }
     }
 
     async openImageModal(image) {
@@ -90,7 +113,7 @@ class GalleryModal {
     updateNavigationButtons() {
         const currentIndex = this.getCurrentImageIndex();
         const { images } = this.core.getState();
-        const totalImages = images.length;
+        const totalImages = images ? images.length : 0; // 确保不会因为images为undefined而报错
         const hasOnlyOneImage = totalImages <= 1;
         const isFirstImage = currentIndex === 0;
         const isLastImage = currentIndex === totalImages - 1;
@@ -98,20 +121,30 @@ class GalleryModal {
         const prevImageBtn = this.elements.get('prevImageBtn');
         const nextImageBtn = this.elements.get('nextImageBtn');
         
-        if (prevImageBtn) {
-            prevImageBtn.disabled = hasOnlyOneImage || isFirstImage;
-            prevImageBtn.classList.toggle('disabled', hasOnlyOneImage || isFirstImage);
+        // 确保按钮元素存在
+        if (!prevImageBtn || !nextImageBtn) {
+            console.error('导航按钮元素缺失');
+            return;
         }
         
-        if (nextImageBtn) {
-            nextImageBtn.disabled = hasOnlyOneImage || isLastImage;
-            nextImageBtn.classList.toggle('disabled', hasOnlyOneImage || isLastImage);
-        }
+        // 更新按钮状态
+        const canGoPrev = totalImages > 1 && currentIndex > 0;
+        const canGoNext = totalImages > 1 && currentIndex < totalImages - 1;
+        
+        prevImageBtn.disabled = !canGoPrev;
+        prevImageBtn.classList.toggle('disabled', !canGoPrev);
+        prevImageBtn.style.opacity = canGoPrev ? '1' : '0.5';
+        prevImageBtn.style.cursor = canGoPrev ? 'pointer' : 'not-allowed';
+        
+        nextImageBtn.disabled = !canGoNext;
+        nextImageBtn.classList.toggle('disabled', !canGoNext);
+        nextImageBtn.style.opacity = canGoNext ? '1' : '0.5';
+        nextImageBtn.style.cursor = canGoNext ? 'pointer' : 'not-allowed';
     }
 
     getCurrentImageIndex() {
         const { currentImage, images } = this.core.getState();
-        if (!currentImage || !images.length) {
+        if (!currentImage || !images || !images.length) {
             return -1;
         }
         
@@ -121,29 +154,44 @@ class GalleryModal {
     }
 
     showPreviousImage() {
-        const currentIndex = this.getCurrentImageIndex();
-        if (currentIndex <= 0) return;
-        
         const { images } = this.core.getState();
+        // 验证图片数据是否有效
+        if (!images || images.length <= 1) {
+            console.log('没有足够的图片用于导航');
+            return;
+        }
+        
+        const currentIndex = this.getCurrentImageIndex();
+        if (currentIndex <= 0 || currentIndex === -1) {
+            console.log('已经是第一张图片');
+            return;
+        }
+        
+        // 输出调试信息
+        console.log(`导航到上一张图片，当前索引: ${currentIndex}, 目标索引: ${currentIndex - 1}`);
         this.openImageModal(images[currentIndex - 1]);
     }
 
     showNextImage() {
-        // 修复：从core状态中获取images，而不是直接引用未定义的变量
         const { images } = this.core.getState();
-        const currentIndex = this.getCurrentImageIndex();
-        
-        // 添加安全检查：确保images存在且有内容
-        if (!images || images.length === 0) {
-            console.warn('没有图片数据可供浏览');
+        // 验证图片数据是否有效
+        if (!images || images.length <= 1) {
+            console.log('没有足够的图片用于导航');
             return;
         }
         
-        if (currentIndex === -1 || currentIndex >= images.length - 1) return;
+        const currentIndex = this.getCurrentImageIndex();
+        if (currentIndex === -1 || currentIndex >= images.length - 1) {
+            console.log('已经是最后一张图片');
+            return;
+        }
         
+        // 输出调试信息
+        console.log(`导航到下一张图片，当前索引: ${currentIndex}, 目标索引: ${currentIndex + 1}`);
         this.openImageModal(images[currentIndex + 1]);
     }
 
+    // 其他方法保持不变...
     showModalLoader() {
         const modalLoader = this.elements.get('modalLoader');
         if (modalLoader) {
