@@ -9,7 +9,7 @@ fi
 # 安装必要的软件
 echo "1/5: 安装必要的软件..."
 apt update
-apt install -y php8.1 php8.1-fpm php8.1-cli nginx unzip wget
+apt install -y php8.1 php7.4-fpm php7.4-cli nginx unzip wget
 
 # 创建项目目录
 echo "2/5: 创建项目目录..."
@@ -33,7 +33,7 @@ server {
 
     location ~ \.php$ {
         include snippets/fastcgi-php.conf;
-        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+        fastcgi_pass unix:/run/php/php7.4-fpm.sock;
         fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
         include fastcgi_params;
     }
@@ -59,8 +59,8 @@ rm -f /etc/nginx/sites-enabled/default
 # 重启Nginx
 systemctl restart nginx
 systemctl enable nginx
-systemctl restart php8.1-fpm
-systemctl enable php8.1-fpm
+systemctl restart php7.4-fpm
+systemctl enable php7.4-fpm
 
 # 提示用户设置图片文件夹
 echo "4/5: 配置图片文件夹路径..."
